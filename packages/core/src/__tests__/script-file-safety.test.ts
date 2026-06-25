@@ -1,11 +1,11 @@
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { spawnTsx } from "./script-test-utils.js";
 
-const rootDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../..");
+const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const helperUrl = pathToFileURL(path.join(rootDir, "scripts/script-file-safety.ts")).href;
 const tempRoots: string[] = [];
 

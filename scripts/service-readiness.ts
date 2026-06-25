@@ -413,7 +413,8 @@ function runPnpm(args: string[]) {
   return spawnSync(pnpmBinary(), args, {
     cwd: rootDir,
     encoding: "utf8",
-    env: process.env
+    env: process.env,
+    shell: process.platform === "win32"
   });
 }
 
