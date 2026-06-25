@@ -266,7 +266,7 @@ function verifyGitHubReleaseEnvironment(args: ParsedArgs): ReadinessCheck {
     title: "GitHub Release Environment",
     status: "fail",
     message: "GitHub release environment preflight failed",
-    action: `Run pnpm release:github-setup -- --repo ${args.repo} --apply, set required secret values by name, then rerun pnpm release:github-preflight -- --repo ${args.repo}.`,
+    action: `Use a GitHub token with repository admin access to run pnpm release:github-setup -- --repo ${args.repo} --apply, set required secret values by name, then rerun pnpm release:github-preflight -- --repo ${args.repo}.`,
     detail: safeCommandOutput(result)
   };
 }

@@ -33,11 +33,15 @@ function main(): void {
     const report = releaseCandidateGitHubEnvironmentRequirements(policy).map((requirement) => {
       const inventory = inventories.find((candidate) => candidate.environment === requirement.environment);
       const present = new Set(inventory?.secrets ?? []);
+      const exists = Boolean(inventory);
 
       return {
         environment: requirement.environment,
+        exists,
         requiredSecrets: requirement.requiredSecrets,
-        missingSecrets: requirement.requiredSecrets.filter((secretName) => !present.has(secretName))
+        missingSecrets: exists
+          ? requirement.requiredSecrets.filter((secretName) => !present.has(secretName))
+          : []
       };
     });
 

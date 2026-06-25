@@ -121,12 +121,13 @@ describe("GitHub release setup and preflight scripts", () => {
 
     const report = JSON.parse(result.stdout) as {
       repository: string;
-      environments: Array<{ environment: string; missingSecrets: string[] }>;
+      environments: Array<{ environment: string; exists: boolean; missingSecrets: string[] }>;
     };
     expect(report.repository).toBe(repository);
     expect(report.environments).toEqual(
       releaseRequirements().map((requirement) => ({
         environment: requirement.environment,
+        exists: true,
         requiredSecrets: requirement.requiredSecrets,
         missingSecrets: []
       }))
@@ -153,6 +154,33 @@ describe("GitHub release setup and preflight scripts", () => {
     expect(output).toContain("\"missingSecrets\": [");
     expect(output).toContain("\"TAURI_SIGNING_PRIVATE_KEY\"");
     expect(output).not.toContain(fakeSecretValue);
+  });
+
+  it("reports missing environments separately from missing secrets", () => {
+    const mock = installMockGh({
+      existingEnvironments: [],
+      secretInventory: completeSecretInventory()
+    });
+
+    const result = runGitHubPreflight(["--repo", repository, "--json"], mock);
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(1);
+    expect(output).toContain("github release preflight: GitHub release environment is missing: internal-release");
+    expect(output).toContain("github release preflight: GitHub release environment is missing: production");
+
+    const report = JSON.parse(result.stdout) as {
+      environments: Array<{ environment: string; exists: boolean; missingSecrets: string[] }>;
+    };
+    expect(report.environments).toEqual(
+      releaseRequirements().map((requirement) => ({
+        environment: requirement.environment,
+        exists: false,
+        requiredSecrets: requirement.requiredSecrets,
+        missingSecrets: []
+      }))
+    );
+    expect(readMockGhLog(mock).filter((entry) => entry.args.slice(0, 2).join(" ") === "secret list")).toHaveLength(0);
   });
 
   it("resolves the current repository through gh when --repo is omitted", () => {
