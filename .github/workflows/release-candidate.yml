@@ -165,7 +165,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browser
-        run: pnpm exec playwright install chromium
+        run: pnpm --filter @builder/desktop exec playwright install chromium
 
       - name: Import Apple signing certificate
         if: inputs.platform == 'macos'

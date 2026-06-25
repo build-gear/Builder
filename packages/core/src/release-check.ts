@@ -3229,7 +3229,7 @@ function validateReleaseReadinessWorkflow(workflow: WorkflowFile): string[] {
     ["windows-2022", "CI workflow must run release readiness on Windows"],
     ["ubuntu-22.04", "CI workflow must run release readiness on Ubuntu"],
     ["pnpm install --frozen-lockfile", "CI workflow must install dependencies with a frozen lockfile"],
-    ["pnpm exec playwright install chromium", "CI workflow must install the Chromium browser for desktop E2E tests"],
+    ["pnpm --filter @builder/desktop exec playwright install chromium", "CI workflow must install the Chromium browser for desktop E2E tests from the desktop workspace"],
     ["pnpm release:check:fast", "CI workflow must run the fast release readiness gate"],
     [
       "pnpm release:verify -- apps/desktop/src-tauri/target/release-readiness/builder-gear-release-manifest.json",
@@ -3281,7 +3281,7 @@ function validateReleaseCandidateWorkflow(workflow: WorkflowFile): string[] {
     ["windows-2022", "release candidate workflow must support Windows release builds"],
     ["ubuntu-22.04", "release candidate workflow must support Linux release builds"],
     ["pnpm install --frozen-lockfile", "release candidate workflow must install dependencies with a frozen lockfile"],
-    ["pnpm exec playwright install chromium", "release candidate workflow must install Chromium for release E2E tests"],
+    ["pnpm --filter @builder/desktop exec playwright install chromium", "release candidate workflow must install Chromium for release E2E tests from the desktop workspace"],
     ["pnpm release:check:distribution -- --platform \"${{ inputs.platform }}\"", "release candidate workflow must run the internal distribution gate for the selected platform"],
     ["pnpm release:check:stable -- --platform \"${{ inputs.platform }}\"", "release candidate workflow must run the stable distribution gate for the selected platform"],
     ["Validate release environment secrets", "release candidate workflow must validate selected release secret names before build"],
