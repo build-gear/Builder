@@ -45,8 +45,12 @@ describe("GitHub release setup and preflight scripts", () => {
         environment: string;
         existsBefore: boolean;
         created: boolean;
+        configured: boolean;
         requiredSecrets: string[];
+        deploymentBranches: string[];
         secretCommands: string[];
+        branchPolicyCommands: string[];
+        branchPoliciesCreated: string[];
       }>;
     };
 
@@ -57,10 +61,16 @@ describe("GitHub release setup and preflight scripts", () => {
         environment: requirement.environment,
         existsBefore: false,
         created: false,
+        configured: false,
         requiredSecrets: requirement.requiredSecrets,
+        deploymentBranches: requirement.deploymentBranches,
         secretCommands: requirement.requiredSecrets.map((secretName) => (
           `gh secret set ${secretName} --env ${requirement.environment} --repo ${repository}`
-        ))
+        )),
+        branchPolicyCommands: requirement.deploymentBranches.map((branchPattern) => (
+          `gh api --method POST repos/${repository}/environments/${encodeURIComponent(requirement.environment)}/deployment-branch-policies --field name=${branchPattern} --field type=branch`
+        )),
+        branchPoliciesCreated: []
       }))
     );
     expect(readMockGhLog(mock).filter((entry) => entry.args.includes("PUT"))).toEqual([]);
@@ -80,18 +90,22 @@ describe("GitHub release setup and preflight scripts", () => {
 
     const report = JSON.parse(result.stdout) as {
       applied: boolean;
-      environments: Array<{ environment: string; existsBefore: boolean; created: boolean }>;
+      environments: Array<{ environment: string; existsBefore: boolean; created: boolean; configured: boolean; branchPoliciesCreated: string[] }>;
     };
     expect(report.applied).toBe(true);
-    expect(report.environments.map(({ environment, existsBefore, created }) => ({
+    expect(report.environments.map(({ environment, existsBefore, created, configured, branchPoliciesCreated }) => ({
       environment,
       existsBefore,
-      created
+      created,
+      configured,
+      branchPoliciesCreated
     }))).toEqual(
       releaseRequirements().map((requirement) => ({
         environment: requirement.environment,
         existsBefore: false,
-        created: true
+        created: true,
+        configured: true,
+        branchPoliciesCreated: requirement.deploymentBranches
       }))
     );
 
@@ -102,9 +116,23 @@ describe("GitHub release setup and preflight scripts", () => {
       `repos/${repository}/environments/production`
     ]);
     expect(putCalls.map((entry) => JSON.parse(entry.stdin) as unknown)).toEqual([
-      { wait_timer: 0 },
-      { wait_timer: 0 }
+      {
+        wait_timer: 0,
+        deployment_branch_policy: {
+          protected_branches: false,
+          custom_branch_policies: true
+        }
+      },
+      {
+        wait_timer: 0,
+        deployment_branch_policy: {
+          protected_branches: false,
+          custom_branch_policies: true
+        }
+      }
     ]);
+    const postCalls = readMockGhLog(mock).filter((entry) => entry.args.includes("POST"));
+    expect(postCalls).toHaveLength(4);
   });
 
   it("passes preflight when every required environment secret name exists", () => {
@@ -121,7 +149,14 @@ describe("GitHub release setup and preflight scripts", () => {
 
     const report = JSON.parse(result.stdout) as {
       repository: string;
-      environments: Array<{ environment: string; exists: boolean; missingSecrets: string[] }>;
+      environments: Array<{
+        environment: string;
+        exists: boolean;
+        missingSecrets: string[];
+        deploymentBranchPolicy?: { protectedBranches?: boolean; customBranchPolicies?: boolean };
+        requiredDeploymentBranches: string[];
+        missingDeploymentBranches: string[];
+      }>;
     };
     expect(report.repository).toBe(repository);
     expect(report.environments).toEqual(
@@ -129,10 +164,35 @@ describe("GitHub release setup and preflight scripts", () => {
         environment: requirement.environment,
         exists: true,
         requiredSecrets: requirement.requiredSecrets,
+        deploymentBranchPolicy: {
+          protectedBranches: false,
+          customBranchPolicies: true
+        },
+        requiredDeploymentBranches: requirement.deploymentBranches,
+        missingDeploymentBranches: [],
         missingSecrets: []
       }))
     );
     expect(readMockGhLog(mock).filter((entry) => entry.args.slice(0, 2).join(" ") === "secret list")).toHaveLength(2);
+  });
+
+  it("fails preflight when deployment branch policies are missing", () => {
+    const mock = installMockGh({
+      existingEnvironments: ["internal-release", "production"],
+      deploymentBranchPolicies: {
+        "internal-release": ["main"],
+        production: []
+      },
+      secretInventory: completeSecretInventory()
+    });
+
+    const result = runGitHubPreflight(["--repo", repository, "--json"], mock);
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(1);
+    expect(output).toContain("github release preflight: GitHub release environment internal-release is missing deployment branch policy: release/*");
+    expect(output).toContain("github release preflight: GitHub release environment production is missing deployment branch policy: main");
+    expect(output).toContain("\"missingDeploymentBranches\": [");
   });
 
   it("fails preflight with missing secret names only", () => {
@@ -170,13 +230,15 @@ describe("GitHub release setup and preflight scripts", () => {
     expect(output).toContain("github release preflight: GitHub release environment is missing: production");
 
     const report = JSON.parse(result.stdout) as {
-      environments: Array<{ environment: string; exists: boolean; missingSecrets: string[] }>;
+      environments: Array<{ environment: string; exists: boolean; missingSecrets: string[]; missingDeploymentBranches: string[] }>;
     };
     expect(report.environments).toEqual(
       releaseRequirements().map((requirement) => ({
         environment: requirement.environment,
         exists: false,
         requiredSecrets: requirement.requiredSecrets,
+        requiredDeploymentBranches: requirement.deploymentBranches,
+        missingDeploymentBranches: [],
         missingSecrets: []
       }))
     );
@@ -205,6 +267,7 @@ interface MockGhOptions {
   existingEnvironments: string[];
   repoView?: string;
   secretInventory: Record<string, string[]>;
+  deploymentBranchPolicies?: Record<string, string[]>;
 }
 
 interface MockGh {
@@ -226,7 +289,20 @@ function installMockGh(options: MockGhOptions): MockGh {
   const logPath = path.join(root, "gh.log");
   const statePath = path.join(root, "state.json");
   const mockScriptPath = path.join(binDir, "mock-gh.cjs");
-  writeFileSync(statePath, `${JSON.stringify(options)}\n`);
+  writeFileSync(statePath, `${JSON.stringify({
+    ...options,
+    deploymentBranchPolicyConfig: Object.fromEntries(options.existingEnvironments.map((environment) => [
+      environment,
+      {
+        protected_branches: false,
+        custom_branch_policies: true
+      }
+    ])),
+    deploymentBranchPolicies: options.deploymentBranchPolicies ?? Object.fromEntries(options.existingEnvironments.map((environment) => [
+      environment,
+      ["main", "release/*"]
+    ]))
+  })}\n`);
   writeFileSync(mockScriptPath, mockGhSource());
 
   if (process.platform === "win32") {
@@ -267,10 +343,10 @@ const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
 const stdin = args.includes("PUT") ? fs.readFileSync(0, "utf8") : "";
 fs.appendFileSync(logPath, JSON.stringify({ args, stdin }) + "\\n");
 
-function apiEnvironmentName() {
+function apiPathParts() {
   const apiPath = args.find((arg) => arg.startsWith("repos/"));
-  const match = apiPath && /^repos\\/[^/]+\\/[^/]+\\/environments\\/(.+)$/.exec(apiPath);
-  return match ? decodeURIComponent(match[1]) : undefined;
+  const match = apiPath && /^repos\\/[^/]+\\/[^/]+\\/environments\\/([^/]+)(?:\\/(.+))?$/.exec(apiPath);
+  return match ? { environment: decodeURIComponent(match[1]), suffix: match[2] || "" } : undefined;
 }
 
 if (args[0] === "repo" && args[1] === "view") {
@@ -279,25 +355,69 @@ if (args[0] === "repo" && args[1] === "view") {
 }
 
 if (args[0] === "api") {
-  const environment = apiEnvironmentName();
-  if (!environment) {
+  const parts = apiPathParts();
+  if (!parts?.environment) {
     process.stderr.write("unsupported gh api path\\n");
     process.exit(2);
   }
+  const environment = parts.environment;
 
   if (args.includes("PUT")) {
+    const input = JSON.parse(stdin || "{}");
     state.existingEnvironments = Array.from(new Set([...(state.existingEnvironments || []), environment]));
+    state.deploymentBranchPolicyConfig = {
+      ...(state.deploymentBranchPolicyConfig || {}),
+      [environment]: input.deployment_branch_policy || {}
+    };
+    state.deploymentBranchPolicies = {
+      ...(state.deploymentBranchPolicies || {}),
+      [environment]: (state.deploymentBranchPolicies || {})[environment] || []
+    };
     fs.writeFileSync(statePath, JSON.stringify(state));
     process.stdout.write("{}");
     process.exit(0);
   }
 
-  if ((state.existingEnvironments || []).includes(environment)) {
+  if (!(state.existingEnvironments || []).includes(environment)) {
+    process.stderr.write("HTTP 404 Not Found\\n");
+    process.exit(1);
+  }
+
+  if (parts.suffix === "deployment-branch-policies") {
+    if (args.includes("POST")) {
+      const nameArg = args.find((arg) => arg.startsWith("name="));
+      const name = nameArg && nameArg.slice("name=".length);
+      if (!name) {
+        process.stderr.write("missing branch policy name\\n");
+        process.exit(2);
+      }
+      const current = new Set(((state.deploymentBranchPolicies || {})[environment] || []));
+      current.add(name);
+      state.deploymentBranchPolicies = {
+        ...(state.deploymentBranchPolicies || {}),
+        [environment]: Array.from(current)
+      };
+      fs.writeFileSync(statePath, JSON.stringify(state));
+      process.stdout.write(JSON.stringify({ name }));
+      process.exit(0);
+    }
+
+    const policies = ((state.deploymentBranchPolicies || {})[environment] || []).map((name, index) => ({
+      id: index + 1,
+      name
+    }));
+    process.stdout.write(JSON.stringify({ total_count: policies.length, branch_policies: policies }));
     process.exit(0);
   }
 
-  process.stderr.write("HTTP 404 Not Found\\n");
-  process.exit(1);
+  if (!parts.suffix) {
+    const config = (state.deploymentBranchPolicyConfig || {})[environment] || {};
+    process.stdout.write(JSON.stringify({ deployment_branch_policy: config }));
+    process.exit(0);
+  }
+
+  process.stderr.write("unsupported gh api path\\n");
+  process.exit(2);
 }
 
 if (args[0] === "secret" && args[1] === "list") {

@@ -78,7 +78,7 @@ pnpm release:github-setup -- --repo OWNER/REPO --apply
 pnpm release:github-preflight -- --repo OWNER/REPO
 ```
 
-The setup command dry-runs by default and only creates the `internal-release` and `production` environments when `--apply` is provided. Creating GitHub environments requires repository admin rights. The preflight command uses the GitHub CLI to verify that those environments contain the required secret names for all supported platforms/channels. Neither command reads or prints secret values.
+The setup command dry-runs by default and creates or updates the `internal-release` and `production` environments only when `--apply` is provided. Creating or updating GitHub environments requires repository admin rights. Setup also enables custom deployment branch policies and ensures only `main` plus `release/*` can deploy through those environments. The preflight command uses the GitHub CLI to verify that those environments contain the required secret names for all supported platforms/channels and the expected deployment branch policies. Neither command reads or prints secret values.
 
 For a single operational go/no-go check after local release evidence exists, run:
 

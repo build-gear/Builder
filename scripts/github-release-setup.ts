@@ -29,18 +29,28 @@ function main(): void {
     const requirements = releaseCandidateGitHubEnvironmentRequirements(policy);
     const report = requirements.map((requirement) => {
       const existsBefore = githubEnvironmentExists(repo, requirement.environment);
-      const created = parsed.apply && !existsBefore
-        ? createGitHubEnvironment(repo, requirement.environment)
+      const configured = parsed.apply
+        ? configureGitHubEnvironment(repo, requirement.environment)
         : false;
+      const created = parsed.apply && !existsBefore && configured;
+      const branchPoliciesCreated = parsed.apply
+        ? ensureDeploymentBranchPolicies(repo, requirement.environment, requirement.deploymentBranches)
+        : [];
 
       return {
         environment: requirement.environment,
         existsBefore,
         created,
+        configured,
         requiredSecrets: requirement.requiredSecrets,
+        deploymentBranches: requirement.deploymentBranches,
         secretCommands: requirement.requiredSecrets.map((secretName) => (
           `gh secret set ${secretName} --env ${requirement.environment} --repo ${repo}`
-        ))
+        )),
+        branchPolicyCommands: requirement.deploymentBranches.map((branchPattern) => (
+          `gh api --method POST repos/${repo}/environments/${encodeURIComponent(requirement.environment)}/deployment-branch-policies --field name=${branchPattern} --field type=branch`
+        )),
+        branchPoliciesCreated
       };
     });
 
@@ -62,10 +72,12 @@ function main(): void {
           : "would create";
       console.log(`- ${environment.environment}: ${action}`);
       console.log(`  required secret names: ${environment.requiredSecrets.join(", ")}`);
+      console.log(`  deployment branch policies: ${environment.deploymentBranches.join(", ")}`);
       if (!parsed.apply) {
         console.log(`  apply with: pnpm release:github-setup -- --repo ${repo} --apply`);
       }
       console.log(`  set values with: ${environment.secretCommands[0]} ...`);
+      console.log(`  branch policy setup: ${environment.branchPolicyCommands[0]} ...`);
     }
   } catch (error) {
     console.error(`github release setup: ${safeErrorMessage(error)}`);
@@ -164,7 +176,7 @@ function githubEnvironmentExists(repo: string, environment: string): boolean {
   throw new Error(`GitHub environment could not be read: ${environment}: ${safeGhOutput(stderr)}`);
 }
 
-function createGitHubEnvironment(repo: string, environment: string): boolean {
+function configureGitHubEnvironment(repo: string, environment: string): boolean {
   const result = spawnSync("gh", [
     "api",
     "--method",
@@ -175,7 +187,13 @@ function createGitHubEnvironment(repo: string, environment: string): boolean {
   ], {
     cwd: rootDir,
     encoding: "utf8",
-    input: JSON.stringify({ wait_timer: 0 }),
+    input: JSON.stringify({
+      wait_timer: 0,
+      deployment_branch_policy: {
+        protected_branches: false,
+        custom_branch_policies: true
+      }
+    }),
     shell: process.platform === "win32"
   });
 
@@ -188,6 +206,63 @@ function createGitHubEnvironment(repo: string, environment: string): boolean {
   }
 
   return true;
+}
+
+function ensureDeploymentBranchPolicies(repo: string, environment: string, branchPatterns: string[]): string[] {
+  const existing = new Set(listDeploymentBranchPolicies(repo, environment));
+  const created: string[] = [];
+
+  for (const branchPattern of branchPatterns) {
+    if (existing.has(branchPattern)) {
+      continue;
+    }
+
+    createDeploymentBranchPolicy(repo, environment, branchPattern);
+    existing.add(branchPattern);
+    created.push(branchPattern);
+  }
+
+  return created;
+}
+
+function listDeploymentBranchPolicies(repo: string, environment: string): string[] {
+  const output = runGh([
+    "api",
+    `repos/${repo}/environments/${encodeURIComponent(environment)}/deployment-branch-policies`
+  ], `list deployment branch policies for ${environment}`);
+  const parsed = JSON.parse(output) as { branch_policies?: Array<{ name?: string }> };
+
+  return (parsed.branch_policies ?? [])
+    .map((policy) => policy.name?.trim() ?? "")
+    .filter(Boolean)
+    .sort();
+}
+
+function createDeploymentBranchPolicy(repo: string, environment: string, branchPattern: string): void {
+  const result = spawnSync("gh", [
+    "api",
+    "--method",
+    "POST",
+    `repos/${repo}/environments/${encodeURIComponent(environment)}/deployment-branch-policies`,
+    "--field",
+    `name=${branchPattern}`,
+    "--field",
+    "type=branch"
+  ], {
+    cwd: rootDir,
+    encoding: "utf8",
+    shell: process.platform === "win32"
+  });
+
+  if (result.status === 0 || result.status === 303) {
+    return;
+  }
+
+  if (result.error) {
+    throw new Error(`create deployment branch policy failed: ${result.error.message}`);
+  }
+
+  throw new Error(`create deployment branch policy failed for ${environment}/${branchPattern}: ${safeGhOutput(`${result.stderr ?? ""}${result.stdout ?? ""}`)}`);
 }
 
 function runGh(args: string[], label: string): string {

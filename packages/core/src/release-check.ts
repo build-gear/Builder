@@ -234,11 +234,17 @@ export interface StableUpdaterFeed {
 export interface GitHubReleaseEnvironmentRequirement {
   environment: string;
   requiredSecrets: string[];
+  deploymentBranches: string[];
 }
 
 export interface GitHubReleaseSecretInventory {
   environment: string;
   secrets: string[];
+  deploymentBranches?: string[];
+  deploymentBranchPolicy?: {
+    protectedBranches?: boolean;
+    customBranchPolicies?: boolean;
+  };
 }
 
 const RELEASE_PLATFORMS = ["macos", "windows", "linux"] as const;
@@ -1728,11 +1734,13 @@ export function releaseCandidateGitHubEnvironmentRequirements(policy: Record<str
   return [
     {
       environment: "internal-release",
-      requiredSecrets: releaseCandidateGitHubSecretsForChannel(policy, "internal")
+      requiredSecrets: releaseCandidateGitHubSecretsForChannel(policy, "internal"),
+      deploymentBranches: ["main", "release/*"]
     },
     {
       environment: "production",
-      requiredSecrets: releaseCandidateGitHubSecretsForChannel(policy, "stable")
+      requiredSecrets: releaseCandidateGitHubSecretsForChannel(policy, "stable"),
+      deploymentBranches: ["main", "release/*"]
     }
   ];
 }
@@ -1755,6 +1763,17 @@ export function validateReleaseCandidateGitHubSecretInventory(
     for (const secretName of requirement.requiredSecrets) {
       if (!configuredSecrets.has(secretName)) {
         errors.push(`GitHub release environment ${requirement.environment} is missing secret: ${secretName}`);
+      }
+    }
+
+    if (inventory.deploymentBranchPolicy?.customBranchPolicies !== true || inventory.deploymentBranchPolicy.protectedBranches !== false) {
+      errors.push(`GitHub release environment ${requirement.environment} must use custom deployment branch policies`);
+    }
+
+    const configuredDeploymentBranches = new Set(inventory.deploymentBranches ?? []);
+    for (const branchPattern of requirement.deploymentBranches) {
+      if (!configuredDeploymentBranches.has(branchPattern)) {
+        errors.push(`GitHub release environment ${requirement.environment} is missing deployment branch policy: ${branchPattern}`);
       }
     }
   }

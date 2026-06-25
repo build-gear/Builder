@@ -631,6 +631,7 @@ describe("release readiness checks", () => {
     expect(releaseCandidateGitHubEnvironmentRequirements(validMetadata.distributionPolicy)).toEqual([
       {
         environment: "internal-release",
+        deploymentBranches: ["main", "release/*"],
         requiredSecrets: [
           "APPLE_SIGNING_IDENTITY",
           "APPLE_CERTIFICATE",
@@ -645,6 +646,7 @@ describe("release readiness checks", () => {
       },
       {
         environment: "production",
+        deploymentBranches: ["main", "release/*"],
         requiredSecrets: [
           "APPLE_SIGNING_IDENTITY",
           "APPLE_CERTIFICATE",
@@ -666,6 +668,11 @@ describe("release readiness checks", () => {
     expect(validateReleaseCandidateGitHubSecretInventory(validMetadata.distributionPolicy, [
       {
         environment: "internal-release",
+        deploymentBranchPolicy: {
+          protectedBranches: false,
+          customBranchPolicies: true
+        },
+        deploymentBranches: ["main", "release/*"],
         secrets: [
           "APPLE_SIGNING_IDENTITY",
           "APPLE_CERTIFICATE",
@@ -680,6 +687,11 @@ describe("release readiness checks", () => {
       },
       {
         environment: "production",
+        deploymentBranchPolicy: {
+          protectedBranches: false,
+          customBranchPolicies: true
+        },
+        deploymentBranches: ["main", "release/*"],
         secrets: [
           "APPLE_SIGNING_IDENTITY",
           "APPLE_CERTIFICATE",
@@ -701,6 +713,11 @@ describe("release readiness checks", () => {
     expect(validateReleaseCandidateGitHubSecretInventory(validMetadata.distributionPolicy, [
       {
         environment: "internal-release",
+        deploymentBranchPolicy: {
+          protectedBranches: false,
+          customBranchPolicies: true
+        },
+        deploymentBranches: ["main"],
         secrets: [
           "APPLE_SIGNING_IDENTITY",
           "WINDOWS_SIGNING_CERTIFICATE"
@@ -709,6 +726,7 @@ describe("release readiness checks", () => {
     ])).toEqual(expect.arrayContaining([
       "GitHub release environment internal-release is missing secret: APPLE_CERTIFICATE",
       "GitHub release environment internal-release is missing secret: WINDOWS_SIGNING_PASSWORD",
+      "GitHub release environment internal-release is missing deployment branch policy: release/*",
       "GitHub release environment is missing: production"
     ]));
   });

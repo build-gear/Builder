@@ -33,12 +33,18 @@ function main(): void {
     const report = releaseCandidateGitHubEnvironmentRequirements(policy).map((requirement) => {
       const inventory = inventories.find((candidate) => candidate.environment === requirement.environment);
       const present = new Set(inventory?.secrets ?? []);
+      const deploymentBranches = new Set(inventory?.deploymentBranches ?? []);
       const exists = Boolean(inventory);
 
       return {
         environment: requirement.environment,
         exists,
         requiredSecrets: requirement.requiredSecrets,
+        deploymentBranchPolicy: inventory?.deploymentBranchPolicy,
+        requiredDeploymentBranches: requirement.deploymentBranches,
+        missingDeploymentBranches: exists
+          ? requirement.deploymentBranches.filter((branchPattern) => !deploymentBranches.has(branchPattern))
+          : [],
         missingSecrets: exists
           ? requirement.requiredSecrets.filter((secretName) => !present.has(secretName))
           : []
@@ -134,33 +140,54 @@ function collectReleaseEnvironmentInventories(repo: string, policy: Record<strin
   const inventories: GitHubReleaseSecretInventory[] = [];
 
   for (const requirement of releaseCandidateGitHubEnvironmentRequirements(policy)) {
-    if (!githubEnvironmentExists(repo, requirement.environment)) {
+    const environment = readGitHubEnvironment(repo, requirement.environment);
+    if (!environment.exists) {
       continue;
     }
 
     inventories.push({
       environment: requirement.environment,
-      secrets: listGitHubEnvironmentSecrets(repo, requirement.environment)
+      secrets: listGitHubEnvironmentSecrets(repo, requirement.environment),
+      deploymentBranchPolicy: environment.deploymentBranchPolicy,
+      deploymentBranches: listDeploymentBranchPolicies(repo, requirement.environment)
     });
   }
 
   return inventories;
 }
 
-function githubEnvironmentExists(repo: string, environment: string): boolean {
-  const result = spawnSync("gh", ["api", `repos/${repo}/environments/${encodeURIComponent(environment)}`, "--silent"], {
+function readGitHubEnvironment(repo: string, environment: string): {
+  exists: true;
+  deploymentBranchPolicy: {
+    protectedBranches?: boolean;
+    customBranchPolicies?: boolean;
+  };
+} | { exists: false } {
+  const result = spawnSync("gh", ["api", `repos/${repo}/environments/${encodeURIComponent(environment)}`], {
     cwd: rootDir,
     encoding: "utf8",
     shell: process.platform === "win32"
   });
 
   if (result.status === 0) {
-    return true;
+    const parsed = JSON.parse(result.stdout ?? "{}") as {
+      deployment_branch_policy?: {
+        protected_branches?: boolean;
+        custom_branch_policies?: boolean;
+      };
+    };
+    return {
+      exists: true,
+      deploymentBranchPolicy: {
+        protectedBranches: parsed.deployment_branch_policy?.protected_branches,
+        customBranchPolicies: parsed.deployment_branch_policy?.custom_branch_policies
+      }
+    };
   }
 
   const stderr = `${result.stderr ?? ""}${result.stdout ?? ""}`;
   if (/HTTP 404|Not Found/i.test(stderr)) {
-    return false;
+    return { exists: false };
   }
 
   throw new Error(`GitHub environment could not be read: ${environment}: ${safeGhOutput(stderr)}`);
@@ -184,6 +211,19 @@ function listGitHubEnvironmentSecrets(repo: string, environment: string): string
   return parsed
     .map((entry) => entry.name?.trim() ?? "")
     .filter((name) => /^[A-Z0-9_]+$/.test(name))
+    .sort();
+}
+
+function listDeploymentBranchPolicies(repo: string, environment: string): string[] {
+  const output = runGh([
+    "api",
+    `repos/${repo}/environments/${encodeURIComponent(environment)}/deployment-branch-policies`
+  ], `list deployment branch policies for ${environment}`);
+  const parsed = JSON.parse(output) as { branch_policies?: Array<{ name?: string }> };
+
+  return (parsed.branch_policies ?? [])
+    .map((policy) => policy.name?.trim() ?? "")
+    .filter(Boolean)
     .sort();
 }
 
