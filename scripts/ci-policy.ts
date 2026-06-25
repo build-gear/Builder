@@ -35,7 +35,7 @@ try {
 
       return [{
         path: workflowRelativePath,
-        content: readCheckedTextFile(workflowPath, `workflow file ${workflowRelativePath}`)
+        content: normalizePolicyText(readCheckedTextFile(workflowPath, `workflow file ${workflowRelativePath}`))
       }];
     });
 
@@ -69,6 +69,10 @@ try {
 function releaseEnvExampleTexts(): Record<string, string> {
   return Object.fromEntries(releaseEnvironmentExamplePaths().map((examplePath) => [
     examplePath,
-    readRepoTextFile(rootDir, examplePath, `release env example ${examplePath}`)
+    normalizePolicyText(readRepoTextFile(rootDir, examplePath, `release env example ${examplePath}`))
   ]));
+}
+
+function normalizePolicyText(value: string): string {
+  return value.replace(/\r\n/g, "\n");
 }
