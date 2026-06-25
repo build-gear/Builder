@@ -5809,11 +5809,6 @@ mod tests {
     }
 
     #[cfg(unix)]
-    fn mock_workspace() -> PathBuf {
-        test_workspace()
-    }
-
-    #[cfg(unix)]
     fn shell_quote(path: &Path) -> String {
         format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
     }
@@ -8109,7 +8104,7 @@ requiredTools:
 
     #[test]
     fn unsafe_skill_manifest_id_fails_catalog_loading() {
-        let workspace = mock_workspace();
+        let workspace = test_workspace();
         let skill_dir = workspace.join("skills").join("unsafe");
         fs::create_dir_all(&skill_dir).expect("skill directory should be created");
         fs::write(
@@ -8128,7 +8123,7 @@ requiredTools:
     #[cfg(unix)]
     #[test]
     fn invalid_skill_manifest_fails_catalog_loading() {
-        let workspace = mock_workspace();
+        let workspace = test_workspace();
         let skill_dir = workspace.join("skills").join("broken");
         fs::create_dir_all(&skill_dir).expect("skill directory should be created");
         fs::write(
@@ -8149,7 +8144,7 @@ requiredTools:
 
     #[test]
     fn oversized_skill_manifest_fails_catalog_loading() {
-        let workspace = mock_workspace();
+        let workspace = test_workspace();
         let skill_dir = workspace.join("skills").join("oversized");
         fs::create_dir_all(&skill_dir).expect("skill directory should be created");
         fs::write(skill_dir.join("skill.yaml"), oversized_text_body())
@@ -8165,7 +8160,7 @@ requiredTools:
     #[cfg(unix)]
     #[test]
     fn invalid_ontology_json_fails_catalog_loading() {
-        let workspace = mock_workspace();
+        let workspace = test_workspace();
         let ontology_dir = workspace.join("ontology");
         fs::create_dir_all(&ontology_dir).expect("ontology directory should be created");
         fs::write(ontology_dir.join("broken.json"), "{ not json")
@@ -8181,7 +8176,7 @@ requiredTools:
     #[cfg(unix)]
     #[test]
     fn invalid_schedule_json_fails_catalog_loading() {
-        let workspace = mock_workspace();
+        let workspace = test_workspace();
         let builder_dir = workspace.join(".builder");
         fs::create_dir_all(&builder_dir).expect("builder directory should be created");
         fs::write(builder_dir.join("schedules.json"), "{ not json")
@@ -8303,7 +8298,7 @@ requiredTools:
     #[cfg(unix)]
     #[test]
     fn spawned_mock_codex_stream_parses_process_pipes() {
-        let workspace = mock_workspace();
+        let workspace = test_workspace();
         let (mock_codex, args_path, stdin_path) = create_mock_codex_script(&workspace);
         let mut request = request();
         request.workspace_path = workspace.to_string_lossy().to_string();
@@ -8357,7 +8352,7 @@ requiredTools:
             .get_or_init(|| Mutex::new(()))
             .lock()
             .expect("environment test lock should not be poisoned");
-        let workspace = mock_workspace();
+        let workspace = test_workspace();
         let (mock_codex, env_path) = create_mock_codex_env_script(&workspace);
         let previous_apple_password = std::env::var_os("APPLE_PASSWORD");
         let previous_apple_certificate = std::env::var_os("APPLE_CERTIFICATE");
