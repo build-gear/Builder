@@ -243,17 +243,8 @@ function main() {
     assert(!unsafeDryRun.stdout.includes(prompt), "CLI unsafe dry-run printed prompt text");
     assert(Array.isArray(unsafeDryRunInvocation.args), "CLI unsafe dry-run did not print invocation args");
     assert(
-      unsafeDryRunInvocation.args.slice(0, 8).join("\0") === [
-        "--ask-for-approval",
-        "never",
-        "exec",
-        "--json",
-        "--cd",
-        canonicalWorkspace,
-        "--sandbox",
-        "workspace-write"
-      ].join("\0"),
-      "CLI unsafe dry-run no longer matches the supported Codex exec argument order"
+      matchesCodexExecPrefix(unsafeDryRunInvocation.args, canonicalWorkspace),
+      `CLI unsafe dry-run no longer matches the supported Codex exec argument order: ${JSON.stringify(unsafeDryRunInvocation.args.slice(0, 8))}`
     );
     verifyInstalledCodexParser(unsafeDryRunInvocation.args);
     verifyPackedCliInstall(tempRoot);
@@ -439,6 +430,26 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+function matchesCodexExecPrefix(args: string[], workspacePath: string) {
+  return args.length >= 8
+    && args[0] === "--ask-for-approval"
+    && args[1] === "never"
+    && args[2] === "exec"
+    && args[3] === "--json"
+    && args[4] === "--cd"
+    && samePathForCurrentPlatform(args[5] ?? "", workspacePath)
+    && args[6] === "--sandbox"
+    && args[7] === "workspace-write";
+}
+
+function samePathForCurrentPlatform(actual: string, expected: string) {
+  if (process.platform !== "win32") {
+    return actual === expected;
+  }
+
+  return path.normalize(actual).toLowerCase() === path.normalize(expected).toLowerCase();
 }
 
 function readPackageJson(relativePath: string): { version?: string } {
