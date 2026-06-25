@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "artifactName": "Builder Gear.app",
+  "bundleTargets": ["app", "dmg"],
+  "channels": [
+    {
+      "id": "internal",
+      "requiresCodeSigning": true,
+      "requiresNotarization": true,
+      "requiresUpdaterArtifacts": false,
+      "requiredEnvironment": []
+    },
+    {
+      "id": "stable",
+      "requiresCodeSigning": true,
+      "requiresNotarization": true,
+      "requiresUpdaterArtifacts": true,
+      "requiredEnvironment": [
+        "TAURI_SIGNING_PRIVATE_KEY",
+        "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
+        "BUILDER_GEAR_UPDATER_PUBKEY",
+        "BUILDER_GEAR_UPDATE_ENDPOINT"
+      ]
+    }
+  ],
+  "macOS": {
+    "minimumSystemVersion": "12.0",
+    "hardenedRuntime": true,
+    "entitlements": "apps/desktop/src-tauri/entitlements.plist",
+    "requiredEnvironment": [
+      "APPLE_SIGNING_IDENTITY",
+      "APPLE_ID",
+      "APPLE_PASSWORD",
+      "APPLE_TEAM_ID"
+    ]
+  },
+  "windows": {
+    "bundleTargets": ["msi", "nsis"],
+    "requiredEnvironment": [
+      "WINDOWS_SIGNING_CERTIFICATE",
+      "WINDOWS_SIGNING_PASSWORD"
+    ]
+  },
+  "linux": {
+    "bundleTargets": ["appimage", "deb", "rpm"],
+    "requiredEnvironment": []
+  }
+}

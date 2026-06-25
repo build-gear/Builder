@@ -1,0 +1,29 @@
+{
+  "name": "@builder/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "builder": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run src",
+    "lint": "tsc --noEmit",
+    "builder": "tsx --conditions development src/index.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "commander": "^12.1.0",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@builder/core": "workspace:*",
+    "@types/better-sqlite3": "^7.6.12",
+    "tsup": "^8.3.5"
+  }
+}

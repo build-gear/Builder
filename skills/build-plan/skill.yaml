@@ -1,0 +1,19 @@
+id: build-plan
+name: Build Plan
+version: 0.1.0
+occupations:
+  - developer
+  - operator
+  - designer
+inputsJsonSchema:
+  type: object
+  additionalProperties: true
+instructionsPath: instructions.md
+requiredTools:
+  - codex
+  - git
+uiPanels:
+  - runs
+  - ontology
+  - artifacts
+

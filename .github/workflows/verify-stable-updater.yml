@@ -1,0 +1,239 @@
+name: Verify Stable Updater
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_run_id:
+        description: "Release Candidate workflow run ID that uploaded the stable artifact"
+        required: true
+        type: string
+      platform:
+        description: "Stable artifact platform"
+        required: true
+        default: "macos"
+        type: choice
+        options:
+          - macos
+          - windows
+          - linux
+      verify_downloads:
+        description: "Download hosted updater payloads and verify SHA-256"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: builder-gear-verify-stable-updater-${{ inputs.release_run_id }}-${{ inputs.platform }}
+  cancel-in-progress: false
+
+jobs:
+  ref-guard:
+    name: Stable updater verification ref guard
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Require main or release ref
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$GITHUB_REF" in
+            refs/heads/main|refs/heads/release/*)
+              ;;
+            *)
+              echo "Stable updater verification must run from main or release/** refs."
+              exit 1
+              ;;
+          esac
+
+  verify:
+    name: Verify hosted updater (${{ inputs.platform }})
+    needs: ref-guard
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    environment:
+      name: production
+    permissions:
+      actions: read
+      attestations: read
+      contents: read
+
+    steps:
+      - name: Validate release candidate run metadata
+        id: release-run-metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          metadata="$(gh run view "${{ inputs.release_run_id }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json workflowName,event,conclusion,headBranch,headSha \
+            --jq '[.workflowName, .event, .conclusion, .headBranch, .headSha] | @tsv')"
+
+          IFS=$'\t' read -r workflow_name event conclusion head_branch head_sha <<< "$metadata"
+
+          if [ "$workflow_name" != "Release Candidate" ]; then
+            echo "Selected run is not a Release Candidate workflow run."
+            exit 1
+          fi
+
+          if [ "$event" != "workflow_dispatch" ]; then
+            echo "Selected release candidate was not manually dispatched."
+            exit 1
+          fi
+
+          if [ "$conclusion" != "success" ]; then
+            echo "Selected release candidate did not complete successfully."
+            exit 1
+          fi
+
+          case "$head_branch" in
+            main|release/*)
+              ;;
+            *)
+              echo "Selected release candidate must come from main or release/** branches."
+              exit 1
+              ;;
+          esac
+
+          if ! [[ "$head_sha" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "Selected release candidate head SHA is invalid."
+            exit 1
+          fi
+
+          printf 'head_sha=%s\n' "$head_sha" >> "$GITHUB_OUTPUT"
+          printf 'RELEASE_CANDIDATE_HEAD_SHA=%s\n' "$head_sha" >> "$GITHUB_ENV"
+
+      - name: Checkout selected release source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ steps.release-run-metadata.outputs.head_sha }}
+          persist-credentials: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download stable candidate artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          run-id: ${{ inputs.release_run_id }}
+          github-token: ${{ github.token }}
+          pattern: builder-gear-stable-${{ inputs.platform }}-*
+          path: release-candidate-artifact
+          merge-multiple: true
+
+      - name: Verify staged stable manifest
+        shell: bash
+        env:
+          ARTIFACT_ROOT: release-candidate-artifact
+          EXPECTED_PLATFORM: ${{ inputs.platform }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ inputs.platform }}" = "macos" ]; then
+            MANIFEST_PATH="apps/desktop/src-tauri/target/release/bundle/macos/builder-gear-release-manifest.json"
+          else
+            MANIFEST_PATH="apps/desktop/src-tauri/target/release/bundle/builder-gear-release-manifest.json"
+          fi
+
+          pnpm release:verify -- --artifact-root "$ARTIFACT_ROOT" "$MANIFEST_PATH"
+          MANIFEST_PATH="$MANIFEST_PATH" node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          import path from "node:path";
+
+          const manifestPath = process.env.MANIFEST_PATH;
+          const artifactRoot = process.env.ARTIFACT_ROOT;
+          const expectedHeadSha = process.env.RELEASE_CANDIDATE_HEAD_SHA;
+          const expectedPlatform = process.env.EXPECTED_PLATFORM;
+
+          if (!manifestPath || !artifactRoot || !expectedHeadSha || !expectedPlatform) {
+            console.error("Release candidate metadata is missing.");
+            process.exit(1);
+          }
+
+          const manifest = JSON.parse(readFileSync(path.join(artifactRoot, manifestPath), "utf8"));
+          if (manifest.mode !== "distribution" || manifest.channel !== "stable" || manifest.includeBundle !== true) {
+            console.error("Downloaded release manifest is not a bundled stable distribution candidate.");
+            process.exit(1);
+          }
+
+          if (manifest.platform !== expectedPlatform) {
+            console.error("Downloaded release manifest platform does not match the requested verifier platform.");
+            process.exit(1);
+          }
+
+          if (manifest.git?.commit !== expectedHeadSha) {
+            console.error("Downloaded release manifest commit does not match the selected Release Candidate run.");
+            process.exit(1);
+          }
+          NODE
+
+      - name: Verify release candidate attestations
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          file_count=0
+          while IFS= read -r -d '' file; do
+            file_count=$((file_count + 1))
+            gh attestation verify "$file" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/release-candidate.yml" \
+              --deny-self-hosted-runners
+          done < <(find release-candidate-artifact/apps/desktop/src-tauri/target/release-upload -type f -print0)
+
+          if [ "$file_count" -eq 0 ]; then
+            echo "No staged release files were downloaded."
+            exit 1
+          fi
+
+      - name: Verify hosted stable updater feed
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ inputs.platform }}" = "macos" ]; then
+            MANIFEST_PATH="apps/desktop/src-tauri/target/release/bundle/macos/builder-gear-release-manifest.json"
+          else
+            MANIFEST_PATH="apps/desktop/src-tauri/target/release/bundle/builder-gear-release-manifest.json"
+          fi
+
+          if [ "${{ inputs.verify_downloads }}" = "true" ]; then
+            pnpm release:verify-updater -- --artifact-root release-candidate-artifact "$MANIFEST_PATH" --verify-downloads
+          else
+            pnpm release:verify-updater -- --artifact-root release-candidate-artifact "$MANIFEST_PATH"
+          fi
+
+      - name: Run service readiness audit
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ inputs.platform }}" = "macos" ]; then
+            MANIFEST_PATH="apps/desktop/src-tauri/target/release/bundle/macos/builder-gear-release-manifest.json"
+          else
+            MANIFEST_PATH="apps/desktop/src-tauri/target/release/bundle/builder-gear-release-manifest.json"
+          fi
+
+          if [ "${{ inputs.verify_downloads }}" = "true" ]; then
+            pnpm service:readiness -- --artifact-root release-candidate-artifact --manifest "$MANIFEST_PATH" --stable-manifest "$MANIFEST_PATH" --skip-github --verify-downloads --json
+          else
+            pnpm service:readiness -- --artifact-root release-candidate-artifact --manifest "$MANIFEST_PATH" --stable-manifest "$MANIFEST_PATH" --skip-github --json
+          fi

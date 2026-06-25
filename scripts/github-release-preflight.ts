@@ -1,0 +1,209 @@
+#!/usr/bin/env tsx
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  releaseCandidateGitHubEnvironmentRequirements,
+  validateReleaseCandidateGitHubSecretInventory,
+  type GitHubReleaseSecretInventory
+} from "../packages/core/src/release-check.js";
+import {
+  readRepoJsonFile,
+  safeErrorMessage as safeScriptErrorMessage
+} from "./script-file-safety.js";
+
+const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const usage = "Usage: pnpm release:github-preflight -- [--repo owner/name] [--json]";
+
+main();
+
+function main(): void {
+  const parsed = parseArgs(process.argv.slice(2));
+  if (!parsed.ok) {
+    console.error(parsed.message);
+    process.exitCode = parsed.exitCode;
+    return;
+  }
+
+  try {
+    const policy = readRepoJsonFile<Record<string, unknown>>(rootDir, "release/distribution-policy.json", "distribution policy");
+    const repo = parsed.repo ?? resolveGitHubRepository();
+    const inventories = collectReleaseEnvironmentInventories(repo, policy);
+    const errors = validateReleaseCandidateGitHubSecretInventory(policy, inventories);
+    const report = releaseCandidateGitHubEnvironmentRequirements(policy).map((requirement) => {
+      const inventory = inventories.find((candidate) => candidate.environment === requirement.environment);
+      const present = new Set(inventory?.secrets ?? []);
+
+      return {
+        environment: requirement.environment,
+        requiredSecrets: requirement.requiredSecrets,
+        missingSecrets: requirement.requiredSecrets.filter((secretName) => !present.has(secretName))
+      };
+    });
+
+    if (parsed.json) {
+      console.log(JSON.stringify({ repository: repo, environments: report }, null, 2));
+    }
+
+    if (errors.length > 0) {
+      for (const error of errors) {
+        console.error(`github release preflight: ${error}`);
+      }
+      process.exitCode = 1;
+      return;
+    }
+
+    if (!parsed.json) {
+      const secretCount = report.reduce((total, environment) => total + environment.requiredSecrets.length, 0);
+      console.log(`GitHub release preflight passed for ${repo}: ${report.length} environments, ${secretCount} required secret names checked.`);
+    }
+  } catch (error) {
+    console.error(`github release preflight: ${safeErrorMessage(error)}`);
+    process.exitCode = 1;
+  }
+}
+
+function parseArgs(argv: string[]): { ok: true; repo?: string; json: boolean } | { ok: false; exitCode: 0 | 1; message: string } {
+  const args = argv.filter((arg) => arg !== "--");
+  let repo: string | undefined;
+  let json = false;
+
+  if (args.length === 1 && (args[0] === "--help" || args[0] === "-h")) {
+    return { ok: false, exitCode: 0, message: usage };
+  }
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (arg === "--json") {
+      if (json) {
+        return { ok: false, exitCode: 1, message: `duplicate option: --json\n${usage}` };
+      }
+      json = true;
+      continue;
+    }
+
+    if (arg === "--repo") {
+      if (repo) {
+        return { ok: false, exitCode: 1, message: `duplicate option: --repo\n${usage}` };
+      }
+
+      const value = args[index + 1];
+      if (!value || value.startsWith("-")) {
+        return { ok: false, exitCode: 1, message: `missing value for option: --repo\n${usage}` };
+      }
+      if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value)) {
+        return { ok: false, exitCode: 1, message: `--repo must be owner/name\n${usage}` };
+      }
+
+      repo = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--help" || arg === "-h") {
+      return { ok: false, exitCode: 1, message: `help must be requested without other arguments\n${usage}` };
+    }
+
+    if (arg.startsWith("-")) {
+      return { ok: false, exitCode: 1, message: `unknown option: ${arg}\n${usage}` };
+    }
+
+    return { ok: false, exitCode: 1, message: `unexpected argument: ${arg}\n${usage}` };
+  }
+
+  return { ok: true, repo, json };
+}
+
+function resolveGitHubRepository(): string {
+  const output = runGh(["repo", "view", "--json", "nameWithOwner"], "read GitHub repository metadata");
+  const parsed = JSON.parse(output) as { nameWithOwner?: string };
+  const repo = parsed.nameWithOwner?.trim();
+
+  if (!repo || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) {
+    throw new Error("GitHub repository could not be resolved; pass --repo owner/name");
+  }
+
+  return repo;
+}
+
+function collectReleaseEnvironmentInventories(repo: string, policy: Record<string, unknown>): GitHubReleaseSecretInventory[] {
+  const inventories: GitHubReleaseSecretInventory[] = [];
+
+  for (const requirement of releaseCandidateGitHubEnvironmentRequirements(policy)) {
+    if (!githubEnvironmentExists(repo, requirement.environment)) {
+      continue;
+    }
+
+    inventories.push({
+      environment: requirement.environment,
+      secrets: listGitHubEnvironmentSecrets(repo, requirement.environment)
+    });
+  }
+
+  return inventories;
+}
+
+function githubEnvironmentExists(repo: string, environment: string): boolean {
+  const result = spawnSync("gh", ["api", `repos/${repo}/environments/${encodeURIComponent(environment)}`, "--silent"], {
+    cwd: rootDir,
+    encoding: "utf8"
+  });
+
+  if (result.status === 0) {
+    return true;
+  }
+
+  const stderr = `${result.stderr ?? ""}${result.stdout ?? ""}`;
+  if (/HTTP 404|Not Found/i.test(stderr)) {
+    return false;
+  }
+
+  throw new Error(`GitHub environment could not be read: ${environment}: ${safeGhOutput(stderr)}`);
+}
+
+function listGitHubEnvironmentSecrets(repo: string, environment: string): string[] {
+  const output = runGh([
+    "secret",
+    "list",
+    "--env",
+    environment,
+    "--repo",
+    repo,
+    "--json",
+    "name",
+    "--limit",
+    "1000"
+  ], `list GitHub environment secrets for ${environment}`);
+  const parsed = JSON.parse(output) as Array<{ name?: string }>;
+
+  return parsed
+    .map((entry) => entry.name?.trim() ?? "")
+    .filter((name) => /^[A-Z0-9_]+$/.test(name))
+    .sort();
+}
+
+function runGh(args: string[], label: string): string {
+  const result = spawnSync("gh", args, {
+    cwd: rootDir,
+    encoding: "utf8"
+  });
+
+  if (result.error) {
+    throw new Error(`${label} failed: ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    throw new Error(`${label} failed: ${safeGhOutput(`${result.stderr ?? ""}${result.stdout ?? ""}`)}`);
+  }
+
+  return result.stdout ?? "";
+}
+
+function safeGhOutput(output: string): string {
+  const trimmed = output.replace(/\s+/g, " ").trim();
+  return trimmed || "gh command failed";
+}
+
+function safeErrorMessage(error: unknown): string {
+  return safeScriptErrorMessage(rootDir, error);
+}

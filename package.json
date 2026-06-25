@@ -1,0 +1,54 @@
+{
+  "name": "builder-gear",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.26.1",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck && tsc --noEmit -p tsconfig.scripts.json",
+    "lint": "pnpm -r lint",
+    "ci:policy": "tsx scripts/ci-policy.ts",
+    "license:policy": "tsx scripts/license-policy.ts",
+    "license:notices": "tsx scripts/license-notices.ts",
+    "license:notices:check": "tsx scripts/license-notices.ts --check",
+    "sbom:generate": "tsx scripts/sbom.ts",
+    "sbom:check": "tsx scripts/sbom.ts --check",
+    "security:audit": "pnpm audit --audit-level low",
+    "privacy:scan": "tsx scripts/privacy-scan.ts",
+    "icons:generate": "tsx scripts/generate-app-icons.ts",
+    "release:check": "tsx scripts/release-check.ts",
+    "release:check:fast": "tsx scripts/release-check.ts --skip-bundle",
+    "release:check:distribution": "tsx scripts/release-check.ts --distribution --channel internal",
+    "release:check:stable": "tsx scripts/release-check.ts --distribution --channel stable",
+    "release:preflight": "tsx scripts/distribution-preflight.ts",
+    "release:github-setup": "tsx scripts/github-release-setup.ts",
+    "release:github-preflight": "tsx scripts/github-release-preflight.ts",
+    "release:smoke-bundle": "tsx scripts/desktop-bundle-smoke.ts",
+    "release:stage-upload": "tsx scripts/stage-release-upload.ts",
+    "release:verify": "tsx scripts/verify-release-manifest.ts",
+    "release:verify-updater": "tsx scripts/verify-stable-updater.ts",
+    "service:readiness": "tsx scripts/service-readiness.ts",
+    "dev": "pnpm --filter @builder/desktop dev",
+    "desktop": "pnpm --filter @builder/desktop tauri dev",
+    "cli": "pnpm --filter @builder/cli builder",
+    "doctor": "pnpm --filter @builder/cli builder -- doctor"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsup": "^8.3.5",
+    "tsx": "^4.20.6",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
+  },
+  "pnpm": {
+    "overrides": {
+      "tsup>esbuild": "0.28.1"
+    },
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  }
+}

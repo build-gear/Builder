@@ -1,0 +1,17 @@
+id: research-brief
+name: Research Brief
+version: 0.1.0
+occupations:
+  - analyst
+  - planner
+inputsJsonSchema:
+  type: object
+  additionalProperties: true
+instructionsPath: instructions.md
+requiredTools:
+  - codex
+  - web
+uiPanels:
+  - skills
+  - artifacts
+

@@ -1,0 +1,68 @@
+[
+  {
+    "id": "profession-builder",
+    "type": "Profession",
+    "label": "Professional Builder",
+    "properties": {
+      "audience": "cross-functional"
+    },
+    "relations": [
+      {
+        "type": "uses",
+        "targetId": "skill-build-plan"
+      }
+    ]
+  },
+  {
+    "id": "goal-mvp",
+    "type": "Goal",
+    "label": "Ship Builder Gear MVP",
+    "properties": {
+      "status": "active"
+    },
+    "relations": [
+      {
+        "type": "contains",
+        "targetId": "task-cli-first"
+      }
+    ]
+  },
+  {
+    "id": "task-cli-first",
+    "type": "Task",
+    "label": "Codex CLI-first execution",
+    "properties": {
+      "owner": "core"
+    },
+    "relations": [
+      {
+        "type": "produces",
+        "targetId": "artifact-run-events"
+      }
+    ]
+  },
+  {
+    "id": "skill-build-plan",
+    "type": "Skill",
+    "label": "Build Plan Skill",
+    "properties": {
+      "manifest": "skills/build-plan/skill.yaml"
+    },
+    "relations": [
+      {
+        "type": "supports",
+        "targetId": "goal-mvp"
+      }
+    ]
+  },
+  {
+    "id": "artifact-run-events",
+    "type": "Artifact",
+    "label": "Run Event Stream",
+    "properties": {
+      "contract": "AgentRunEvent"
+    },
+    "relations": []
+  }
+]
+
