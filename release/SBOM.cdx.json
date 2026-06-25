@@ -397,6 +397,186 @@
     },
     {
       "type": "library",
+      "bom-ref": "node:@esbuild/darwin-x64@0.25.12",
+      "name": "@esbuild/darwin-x64",
+      "version": "0.25.12",
+      "purl": "pkg:npm/%40esbuild/darwin-x64@0.25.12",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/evanw/esbuild#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@esbuild/darwin-x64@0.28.1",
+      "name": "@esbuild/darwin-x64",
+      "version": "0.28.1",
+      "purl": "pkg:npm/%40esbuild/darwin-x64@0.28.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/evanw/esbuild#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@esbuild/linux-arm64@0.25.12",
+      "name": "@esbuild/linux-arm64",
+      "version": "0.25.12",
+      "purl": "pkg:npm/%40esbuild/linux-arm64@0.25.12",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/evanw/esbuild#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@esbuild/linux-arm64@0.28.1",
+      "name": "@esbuild/linux-arm64",
+      "version": "0.28.1",
+      "purl": "pkg:npm/%40esbuild/linux-arm64@0.28.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/evanw/esbuild#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@esbuild/linux-x64@0.25.12",
+      "name": "@esbuild/linux-x64",
+      "version": "0.25.12",
+      "purl": "pkg:npm/%40esbuild/linux-x64@0.25.12",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/evanw/esbuild#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@esbuild/linux-x64@0.28.1",
+      "name": "@esbuild/linux-x64",
+      "version": "0.28.1",
+      "purl": "pkg:npm/%40esbuild/linux-x64@0.28.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/evanw/esbuild#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@esbuild/win32-arm64@0.25.12",
+      "name": "@esbuild/win32-arm64",
+      "version": "0.25.12",
+      "purl": "pkg:npm/%40esbuild/win32-arm64@0.25.12",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/evanw/esbuild#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@esbuild/win32-arm64@0.28.1",
+      "name": "@esbuild/win32-arm64",
+      "version": "0.28.1",
+      "purl": "pkg:npm/%40esbuild/win32-arm64@0.28.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/evanw/esbuild#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@esbuild/win32-x64@0.25.12",
+      "name": "@esbuild/win32-x64",
+      "version": "0.25.12",
+      "purl": "pkg:npm/%40esbuild/win32-x64@0.25.12",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/evanw/esbuild#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@esbuild/win32-x64@0.28.1",
+      "name": "@esbuild/win32-x64",
+      "version": "0.28.1",
+      "purl": "pkg:npm/%40esbuild/win32-x64@0.28.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/evanw/esbuild#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "node:@jridgewell/gen-mapping@0.3.13",
       "name": "@jridgewell/gen-mapping",
       "version": "0.3.13",
@@ -541,6 +721,150 @@
     },
     {
       "type": "library",
+      "bom-ref": "node:@rollup/rollup-darwin-x64@4.62.2",
+      "name": "@rollup/rollup-darwin-x64",
+      "version": "4.62.2",
+      "purl": "pkg:npm/%40rollup/rollup-darwin-x64@4.62.2",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://rollupjs.org/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@rollup/rollup-linux-arm64-gnu@4.62.2",
+      "name": "@rollup/rollup-linux-arm64-gnu",
+      "version": "4.62.2",
+      "purl": "pkg:npm/%40rollup/rollup-linux-arm64-gnu@4.62.2",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://rollupjs.org/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@rollup/rollup-linux-arm64-musl@4.62.2",
+      "name": "@rollup/rollup-linux-arm64-musl",
+      "version": "4.62.2",
+      "purl": "pkg:npm/%40rollup/rollup-linux-arm64-musl@4.62.2",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://rollupjs.org/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@rollup/rollup-linux-x64-gnu@4.62.2",
+      "name": "@rollup/rollup-linux-x64-gnu",
+      "version": "4.62.2",
+      "purl": "pkg:npm/%40rollup/rollup-linux-x64-gnu@4.62.2",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://rollupjs.org/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@rollup/rollup-linux-x64-musl@4.62.2",
+      "name": "@rollup/rollup-linux-x64-musl",
+      "version": "4.62.2",
+      "purl": "pkg:npm/%40rollup/rollup-linux-x64-musl@4.62.2",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://rollupjs.org/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@rollup/rollup-win32-arm64-msvc@4.62.2",
+      "name": "@rollup/rollup-win32-arm64-msvc",
+      "version": "4.62.2",
+      "purl": "pkg:npm/%40rollup/rollup-win32-arm64-msvc@4.62.2",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://rollupjs.org/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@rollup/rollup-win32-x64-gnu@4.62.2",
+      "name": "@rollup/rollup-win32-x64-gnu",
+      "version": "4.62.2",
+      "purl": "pkg:npm/%40rollup/rollup-win32-x64-gnu@4.62.2",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://rollupjs.org/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@rollup/rollup-win32-x64-msvc@4.62.2",
+      "name": "@rollup/rollup-win32-x64-msvc",
+      "version": "4.62.2",
+      "purl": "pkg:npm/%40rollup/rollup-win32-x64-msvc@4.62.2",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://rollupjs.org/"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "node:@standard-schema/spec@1.1.0",
       "name": "@standard-schema/spec",
       "version": "1.1.0",
@@ -599,6 +923,132 @@
       "name": "@tauri-apps/cli-darwin-arm64",
       "version": "2.11.3",
       "purl": "pkg:npm/%40tauri-apps/cli-darwin-arm64@2.11.3",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/tauri-apps/tauri#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@tauri-apps/cli-darwin-x64@2.11.3",
+      "name": "@tauri-apps/cli-darwin-x64",
+      "version": "2.11.3",
+      "purl": "pkg:npm/%40tauri-apps/cli-darwin-x64@2.11.3",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/tauri-apps/tauri#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@tauri-apps/cli-linux-arm64-gnu@2.11.3",
+      "name": "@tauri-apps/cli-linux-arm64-gnu",
+      "version": "2.11.3",
+      "purl": "pkg:npm/%40tauri-apps/cli-linux-arm64-gnu@2.11.3",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/tauri-apps/tauri#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@tauri-apps/cli-linux-arm64-musl@2.11.3",
+      "name": "@tauri-apps/cli-linux-arm64-musl",
+      "version": "2.11.3",
+      "purl": "pkg:npm/%40tauri-apps/cli-linux-arm64-musl@2.11.3",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/tauri-apps/tauri#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@tauri-apps/cli-linux-x64-gnu@2.11.3",
+      "name": "@tauri-apps/cli-linux-x64-gnu",
+      "version": "2.11.3",
+      "purl": "pkg:npm/%40tauri-apps/cli-linux-x64-gnu@2.11.3",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/tauri-apps/tauri#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@tauri-apps/cli-linux-x64-musl@2.11.3",
+      "name": "@tauri-apps/cli-linux-x64-musl",
+      "version": "2.11.3",
+      "purl": "pkg:npm/%40tauri-apps/cli-linux-x64-musl@2.11.3",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/tauri-apps/tauri#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@tauri-apps/cli-win32-arm64-msvc@2.11.3",
+      "name": "@tauri-apps/cli-win32-arm64-msvc",
+      "version": "2.11.3",
+      "purl": "pkg:npm/%40tauri-apps/cli-win32-arm64-msvc@2.11.3",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/tauri-apps/tauri#readme"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "node:@tauri-apps/cli-win32-x64-msvc@2.11.3",
+      "name": "@tauri-apps/cli-win32-x64-msvc",
+      "version": "2.11.3",
+      "purl": "pkg:npm/%40tauri-apps/cli-win32-x64-msvc@2.11.3",
       "licenses": [
         {
           "expression": "Apache-2.0 OR MIT"

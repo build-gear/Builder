@@ -87,8 +87,8 @@ describe("workspace health checks", () => {
     expect(JSON.stringify(report)).not.toContain(workspace);
     expect(JSON.stringify(report)).not.toContain(codexHome);
     expect(JSON.stringify(report)).toContain("[WORKSPACE_PATH]");
-    expect(JSON.stringify(unsafeReport)).toContain(workspace);
-    expect(JSON.stringify(unsafeReport)).toContain(codexHome);
+    expect(unsafeReport.checks.some((check) => check.message.includes(workspace))).toBe(true);
+    expect(unsafeReport.checks.some((check) => check.message.includes(codexHome))).toBe(true);
   });
 
   it("warns when workspace backups exceed the retention threshold", async () => {

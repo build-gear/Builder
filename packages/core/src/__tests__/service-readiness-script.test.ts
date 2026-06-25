@@ -119,7 +119,8 @@ describe("service readiness script", () => {
 function runServiceReadiness(args: string[]) {
   return spawnSync(tsxBinary(), ["scripts/service-readiness.ts", ...args], {
     cwd: rootDir,
-    encoding: "utf8"
+    encoding: "utf8",
+    shell: process.platform === "win32"
   });
 }
 

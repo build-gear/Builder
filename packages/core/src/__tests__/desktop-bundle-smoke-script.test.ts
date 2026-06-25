@@ -77,7 +77,8 @@ describe("desktop bundle smoke script", () => {
       repoRelativePath(scriptFixtureDir)
     ], {
       cwd: rootDir,
-      encoding: "utf8"
+      encoding: "utf8",
+      shell: process.platform === "win32"
     });
     const output = `${result.stdout}\n${result.stderr}`;
 
@@ -99,7 +100,8 @@ describe("desktop bundle smoke script", () => {
       repoRelativePath(scriptFixtureDir)
     ], {
       cwd: rootDir,
-      encoding: "utf8"
+      encoding: "utf8",
+      shell: process.platform === "win32"
     });
     const output = `${result.stdout}\n${result.stderr}`;
 
@@ -121,7 +123,8 @@ describe("desktop bundle smoke script", () => {
       repoRelativePath(scriptFixtureDir)
     ], {
       cwd: rootDir,
-      encoding: "utf8"
+      encoding: "utf8",
+      shell: process.platform === "win32"
     });
     const output = `${result.stdout}\n${result.stderr}`;
 
@@ -168,7 +171,8 @@ describe("desktop bundle smoke script", () => {
       "../outside"
     ], {
       cwd: rootDir,
-      encoding: "utf8"
+      encoding: "utf8",
+      shell: process.platform === "win32"
     });
     const output = `${result.stdout}\n${result.stderr}`;
 

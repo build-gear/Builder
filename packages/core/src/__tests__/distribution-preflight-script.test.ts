@@ -91,7 +91,8 @@ function runPreflight(fixture: string) {
     [path.join(fixture, "scripts/distribution-preflight.ts"), "--platform", "linux", "--channel", "internal"],
     {
       cwd: fixture,
-      encoding: "utf8"
+      encoding: "utf8",
+      shell: process.platform === "win32"
     }
   );
 }

@@ -72,6 +72,10 @@ describe("support bundle", () => {
   });
 
   it("redacts macOS /var and /private/var workspace aliases as the selected workspace", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+
     const selectedWorkspace = "/var/folders/xy/builder-support/workspace";
     const realWorkspace = "/private/var/folders/xy/builder-support/workspace";
 

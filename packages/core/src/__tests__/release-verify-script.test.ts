@@ -44,7 +44,8 @@ describe("release manifest verification script", () => {
 
     const result = spawnSync(tsxBinary(), ["scripts/verify-release-manifest.ts", repoRelativePath(manifestPath)], {
       cwd: rootDir,
-      encoding: "utf8"
+      encoding: "utf8",
+      shell: process.platform === "win32"
     });
     const output = `${result.stdout}\n${result.stderr}`;
 
@@ -62,7 +63,8 @@ describe("release manifest verification script", () => {
       "apps/desktop/src-tauri/target/b.json"
     ], {
       cwd: rootDir,
-      encoding: "utf8"
+      encoding: "utf8",
+      shell: process.platform === "win32"
     });
     const output = `${result.stdout}\n${result.stderr}`;
 
@@ -81,7 +83,8 @@ describe("release manifest verification script", () => {
       "builder-gear-release-manifest.json"
     ], {
       cwd: rootDir,
-      encoding: "utf8"
+      encoding: "utf8",
+      shell: process.platform === "win32"
     });
     const output = `${result.stdout}\n${result.stderr}`;
 

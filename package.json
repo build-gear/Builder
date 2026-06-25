@@ -46,6 +46,24 @@
     "overrides": {
       "tsup>esbuild": "0.28.1"
     },
+    "supportedArchitectures": {
+      "os": [
+        "current",
+        "darwin",
+        "linux",
+        "win32"
+      ],
+      "cpu": [
+        "current",
+        "x64",
+        "arm64"
+      ],
+      "libc": [
+        "current",
+        "glibc",
+        "musl"
+      ]
+    },
     "onlyBuiltDependencies": [
       "better-sqlite3",
       "esbuild"

@@ -455,17 +455,17 @@ function targetRelativePathFromParsedBackup(
   directory: boolean | undefined
 ): string {
   if (parsed.targetSlug === ".builder-schedules.json" && directory !== true) {
-    return path.join(".builder", "schedules.json");
+    return ".builder/schedules.json";
   }
 
   if (parsed.targetSlug === "ontology-builder-gear.json" && directory !== true) {
-    return path.join("ontology", "builder-gear.json");
+    return "ontology/builder-gear.json";
   }
 
   if (parsed.targetSlug.startsWith("skills-") && directory !== false) {
     const skillId = parsed.targetSlug.slice("skills-".length);
     if (skillId && /^[A-Za-z0-9_-]+$/.test(skillId)) {
-      return path.join("skills", skillId);
+      return `skills/${skillId}`;
     }
   }
 

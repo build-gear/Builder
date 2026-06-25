@@ -120,7 +120,8 @@ describe("release upload staging script", () => {
 
     const result = spawnSync(tsxBinary(), ["scripts/stage-release-upload.ts", repoRelativePath(manifestPath)], {
       cwd: rootDir,
-      encoding: "utf8"
+      encoding: "utf8",
+      shell: process.platform === "win32"
     });
     const output = `${result.stdout}\n${result.stderr}`;
 
@@ -134,7 +135,8 @@ describe("release upload staging script", () => {
   it("rejects unknown options before reading release files", () => {
     const result = spawnSync(tsxBinary(), ["scripts/stage-release-upload.ts", "--dry-run", "missing.json"], {
       cwd: rootDir,
-      encoding: "utf8"
+      encoding: "utf8",
+      shell: process.platform === "win32"
     });
     const output = `${result.stdout}\n${result.stderr}`;
 

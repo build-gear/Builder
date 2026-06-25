@@ -314,6 +314,7 @@ function runGitHubSetup(args: string[], mock: MockGh) {
   return spawnSync(tsxBinary(), ["scripts/github-release-setup.ts", ...args], {
     cwd: rootDir,
     encoding: "utf8",
+    shell: process.platform === "win32",
     env: mock.env
   });
 }
@@ -322,6 +323,7 @@ function runGitHubPreflight(args: string[], mock: MockGh) {
   return spawnSync(tsxBinary(), ["scripts/github-release-preflight.ts", ...args], {
     cwd: rootDir,
     encoding: "utf8",
+    shell: process.platform === "win32",
     env: mock.env
   });
 }

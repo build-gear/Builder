@@ -6,7 +6,7 @@ import { getCodexAuthPath, inspectCodexAuth, redactLocalPathLikeText, redactSecr
 
 describe("codex auth inspection", () => {
   it("resolves auth path from CODEX_HOME", () => {
-    expect(getCodexAuthPath({ CODEX_HOME: "/tmp/custom-codex" })).toBe(path.join("/tmp/custom-codex", "auth.json"));
+    expect(getCodexAuthPath({ CODEX_HOME: "/tmp/custom-codex" })).toBe(path.join(path.resolve("/tmp/custom-codex"), "auth.json"));
   });
 
   it("reports metadata without returning file contents", async () => {

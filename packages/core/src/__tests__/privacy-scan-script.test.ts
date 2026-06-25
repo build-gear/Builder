@@ -78,7 +78,8 @@ function miniRepo(): string {
 function runPrivacyScan(fixture: string) {
   return spawnSync(tsxBinary(), [path.join(fixture, "scripts/privacy-scan.ts")], {
     cwd: fixture,
-    encoding: "utf8"
+    encoding: "utf8",
+    shell: process.platform === "win32"
   });
 }
 

@@ -175,7 +175,8 @@ function runHelperScript(source: string) {
 
   return spawnSync(tsxBinary(), [scriptPath], {
     cwd: rootDir,
-    encoding: "utf8"
+    encoding: "utf8",
+    shell: process.platform === "win32"
   });
 }
 
