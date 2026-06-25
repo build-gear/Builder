@@ -5443,6 +5443,7 @@ mod tests {
 
     static TEST_WORKSPACE_COUNTER: AtomicU64 = AtomicU64::new(0);
     static RUN_PERMIT_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    #[cfg(unix)]
     static ENV_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
     fn reset_active_run_permits_for_test(value: usize) {
