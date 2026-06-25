@@ -65,6 +65,72 @@ describe("desktop bundle smoke script", () => {
     expect(output).not.toContain("at ");
   });
 
+  it("verifies Windows MSI and NSIS package headers", () => {
+    writeWindowsDistributionArtifacts(scriptFixtureDir);
+
+    const result = spawnSync(tsxBinary(), [
+      "scripts/desktop-bundle-smoke.ts",
+      "--platform",
+      "windows",
+      "--distribution",
+      "--artifact-root",
+      repoRelativePath(scriptFixtureDir)
+    ], {
+      cwd: rootDir,
+      encoding: "utf8"
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(0);
+    expect(output).toContain("Desktop bundle smoke verified");
+    expect(output).not.toContain(rootDir);
+    expect(output).not.toContain("at ");
+  });
+
+  it("rejects Windows packages with invalid executable headers", () => {
+    writeWindowsDistributionArtifacts(scriptFixtureDir, { invalidExe: true });
+
+    const result = spawnSync(tsxBinary(), [
+      "scripts/desktop-bundle-smoke.ts",
+      "--platform",
+      "windows",
+      "--distribution",
+      "--artifact-root",
+      repoRelativePath(scriptFixtureDir)
+    ], {
+      cwd: rootDir,
+      encoding: "utf8"
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(1);
+    expect(output).toContain("Windows NSIS artifact does not have a PE executable header");
+    expect(output).not.toContain(rootDir);
+    expect(output).not.toContain("at ");
+  });
+
+  it("verifies Linux AppImage deb and rpm package headers", () => {
+    writeLinuxDistributionArtifacts(scriptFixtureDir);
+
+    const result = spawnSync(tsxBinary(), [
+      "scripts/desktop-bundle-smoke.ts",
+      "--platform",
+      "linux",
+      "--distribution",
+      "--artifact-root",
+      repoRelativePath(scriptFixtureDir)
+    ], {
+      cwd: rootDir,
+      encoding: "utf8"
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(0);
+    expect(output).toContain("Desktop bundle smoke verified");
+    expect(output).not.toContain(rootDir);
+    expect(output).not.toContain("at ");
+  });
+
   it("rejects symlinked artifact roots before reading generated artifacts", () => {
     if (process.platform === "win32") {
       return;
@@ -133,6 +199,31 @@ function writeMacOSAppFixture(appPath: string, executableName: string, machOExec
     writeFileSync(executablePath, "#!/bin/sh\nexit 0\n");
   }
   chmodSync(executablePath, 0o755);
+}
+
+function writeWindowsDistributionArtifacts(root: string, options: { invalidExe?: boolean } = {}): void {
+  mkdirSync(path.join(root, "msi"), { recursive: true });
+  mkdirSync(path.join(root, "nsis"), { recursive: true });
+  writeFileSync(
+    path.join(root, "msi", "Builder Gear_0.1.0_x64_en-US.msi"),
+    Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00])
+  );
+  writeFileSync(
+    path.join(root, "nsis", "Builder Gear_0.1.0_x64-setup.exe"),
+    options.invalidExe ? Buffer.from("not-a-pe-file") : Buffer.from([0x4d, 0x5a, 0x90, 0x00])
+  );
+}
+
+function writeLinuxDistributionArtifacts(root: string): void {
+  mkdirSync(path.join(root, "appimage"), { recursive: true });
+  mkdirSync(path.join(root, "deb"), { recursive: true });
+  mkdirSync(path.join(root, "rpm"), { recursive: true });
+
+  const appImagePath = path.join(root, "appimage", "Builder Gear_0.1.0_amd64.AppImage");
+  writeFileSync(appImagePath, Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x02]));
+  chmodSync(appImagePath, 0o755);
+  writeFileSync(path.join(root, "deb", "builder-gear_0.1.0_amd64.deb"), Buffer.from("!<arch>\nfixture"));
+  writeFileSync(path.join(root, "rpm", "builder-gear-0.1.0-1.x86_64.rpm"), Buffer.from([0xed, 0xab, 0xee, 0xdb, 0x03]));
 }
 
 function writeMachOExecutableFixture(executablePath: string): void {

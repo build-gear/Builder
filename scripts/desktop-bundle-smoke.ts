@@ -84,9 +84,12 @@ function verifyDesktopBundleSmoke(args: ParsedArgs): string[] {
   }
 
   const appPaths = resolvedArtifacts.paths.filter((artifactPath) => artifactPath.endsWith(".app"));
+  const packagePaths = resolvedArtifacts.paths.filter((artifactPath) => !artifactPath.endsWith(".app"));
   if (appPaths.length === 0) {
     errors.push("macOS release must include an app bundle");
   }
+
+  errors.push(...verifyPackagedFiles(args.platform, packagePaths, artifactRoot));
 
   for (const appPath of appPaths) {
     errors.push(...verifyMacOSAppExecutableSmoke(appPath, artifactRoot));
@@ -219,13 +222,56 @@ function verifyPackagedFiles(platform: ReleasePlatform, artifactPaths: string[],
     }
     if (stats.size === 0) {
       errors.push(`desktop artifact must not be empty: ${relativePath}`);
+      continue;
     }
     if (platform === "linux" && artifactPath.endsWith(".AppImage") && (stats.mode & 0o111) === 0) {
       errors.push(`Linux AppImage artifact is not executable: ${relativePath}`);
     }
+    errors.push(...verifyArtifactHeader(platform, artifactPath, artifactRoot));
   }
 
   return errors;
+}
+
+function verifyArtifactHeader(platform: ReleasePlatform, artifactPath: string, artifactRoot: string): string[] {
+  const relativePath = rootRelativePath(artifactRoot, artifactPath);
+  const basename = path.basename(artifactPath);
+
+  if (basename.endsWith(".sig")) {
+    return [];
+  }
+
+  const header = readFileSync(artifactPath).subarray(0, 8);
+
+  if (platform === "windows" && artifactPath.endsWith(".msi") && !matchesHeader(header, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])) {
+    return [`Windows MSI artifact does not have an MSI compound-file header: ${relativePath}`];
+  }
+
+  if (platform === "windows" && artifactPath.endsWith(".exe") && !matchesHeader(header, [0x4d, 0x5a])) {
+    return [`Windows NSIS artifact does not have a PE executable header: ${relativePath}`];
+  }
+
+  if (platform === "linux" && artifactPath.endsWith(".AppImage") && !matchesHeader(header, [0x7f, 0x45, 0x4c, 0x46])) {
+    return [`Linux AppImage artifact does not have an ELF executable header: ${relativePath}`];
+  }
+
+  if (platform === "linux" && artifactPath.endsWith(".deb") && !matchesHeader(header, [...Buffer.from("!<arch>\n")])) {
+    return [`Linux deb artifact does not have an ar archive header: ${relativePath}`];
+  }
+
+  if (platform === "linux" && artifactPath.endsWith(".rpm") && !matchesHeader(header, [0xed, 0xab, 0xee, 0xdb])) {
+    return [`Linux rpm artifact does not have an rpm package header: ${relativePath}`];
+  }
+
+  return [];
+}
+
+function matchesHeader(header: Buffer, expected: number[]): boolean {
+  if (header.length < expected.length) {
+    return false;
+  }
+
+  return expected.every((byte, index) => header[index] === byte);
 }
 
 function verifyMacOSAppExecutableSmoke(appPath: string, artifactRoot: string): string[] {
