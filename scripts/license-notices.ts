@@ -21,7 +21,7 @@ function main() {
 
     if (checkOnly) {
       const current = readRepoTextFile(rootDir, noticesRelativePath, "third-party notices");
-      if (current !== notices) {
+      if (normalizeGeneratedText(current) !== notices) {
         console.error("license notices: release/THIRD_PARTY_NOTICES.md is stale; run pnpm license:notices");
         process.exitCode = 1;
       } else {
@@ -35,4 +35,8 @@ function main() {
     console.error(`license notices: ${safeErrorMessage(rootDir, error)}`);
     process.exitCode = 1;
   }
+}
+
+function normalizeGeneratedText(value: string): string {
+  return value.replace(/\r\n/g, "\n");
 }

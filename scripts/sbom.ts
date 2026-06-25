@@ -27,7 +27,7 @@ function main() {
 
     if (checkOnly) {
       const current = readRepoTextFile(rootDir, sbomRelativePath, "SBOM");
-      if (current !== sbom) {
+      if (normalizeGeneratedText(current) !== sbom) {
         console.error("sbom: release/SBOM.cdx.json is stale; run pnpm sbom:generate");
         process.exitCode = 1;
       } else {
@@ -41,6 +41,10 @@ function main() {
     console.error(`sbom: ${safeErrorMessage(rootDir, error)}`);
     process.exitCode = 1;
   }
+}
+
+function normalizeGeneratedText(value: string): string {
+  return value.replace(/\r\n/g, "\n");
 }
 
 function requirePackageVersion(packageJson: { version?: string }, label: string): string {

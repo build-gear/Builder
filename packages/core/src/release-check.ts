@@ -3807,12 +3807,7 @@ export function validateDependencyLicenses(
 }
 
 export function renderThirdPartyNotices(entries: DependencyLicenseEntry[]): string {
-  const sortedEntries = [...entries].sort((left, right) => (
-    left.ecosystem.localeCompare(right.ecosystem) ||
-    left.name.localeCompare(right.name) ||
-    left.version.localeCompare(right.version) ||
-    (left.license ?? "").localeCompare(right.license ?? "")
-  ));
+  const sortedEntries = [...entries].sort(compareDependencyLicenseEntries);
   const ecosystemCounts = countBy(sortedEntries, (entry) => entry.ecosystem);
   const licenseCounts = countBy(sortedEntries, (entry) => entry.license?.trim() || "UNKNOWN");
   const lines = [
@@ -3826,13 +3821,13 @@ export function renderThirdPartyNotices(entries: DependencyLicenseEntry[]): stri
     "## Ecosystem Summary",
     "",
     ...[...ecosystemCounts.entries()]
-      .sort((left, right) => left[0].localeCompare(right[0]))
+      .sort((left, right) => compareStableText(left[0], right[0]))
       .map(([ecosystem, count]) => `- ${ecosystem}: ${count}`),
     "",
     "## License Summary",
     "",
     ...[...licenseCounts.entries()]
-      .sort((left, right) => left[0].localeCompare(right[0]))
+      .sort((left, right) => compareStableText(left[0], right[0]))
       .map(([license, count]) => `- ${license}: ${count}`),
     "",
     "## Dependency Notices",
@@ -3854,12 +3849,7 @@ export function renderThirdPartyNotices(entries: DependencyLicenseEntry[]): stri
 
 export function renderCycloneDxSbom(entries: DependencyLicenseEntry[], metadata: SbomMetadata): string {
   const components = [...entries]
-    .sort((left, right) => (
-      left.ecosystem.localeCompare(right.ecosystem) ||
-      left.name.localeCompare(right.name) ||
-      left.version.localeCompare(right.version) ||
-      (left.license ?? "").localeCompare(right.license ?? "")
-    ))
+    .sort(compareDependencyLicenseEntries)
     .map((entry) => {
       const externalReferences = dependencyExternalReferences(entry);
 
@@ -3899,6 +3889,25 @@ export function renderCycloneDxSbom(entries: DependencyLicenseEntry[], metadata:
   };
 
   return `${JSON.stringify(sbom, null, 2)}\n`;
+}
+
+function compareDependencyLicenseEntries(left: DependencyLicenseEntry, right: DependencyLicenseEntry): number {
+  return compareStableText(left.ecosystem, right.ecosystem) ||
+    compareStableText(left.name, right.name) ||
+    compareStableText(left.version, right.version) ||
+    compareStableText(left.license ?? "", right.license ?? "");
+}
+
+function compareStableText(left: string, right: string): number {
+  if (left < right) {
+    return -1;
+  }
+
+  if (left > right) {
+    return 1;
+  }
+
+  return 0;
 }
 
 export function validateLicensePolicy(policy: LicensePolicy): string[] {
