@@ -445,11 +445,32 @@ function matchesCodexExecPrefix(args: string[], workspacePath: string) {
 }
 
 function samePathForCurrentPlatform(actual: string, expected: string) {
+  const actualPath = comparablePath(actual);
+  const expectedPath = comparablePath(expected);
+
   if (process.platform !== "win32") {
-    return actual === expected;
+    return actualPath === expectedPath;
   }
 
-  return path.normalize(actual).toLowerCase() === path.normalize(expected).toLowerCase();
+  return actualPath.toLowerCase() === expectedPath.toLowerCase();
+}
+
+function comparablePath(value: string) {
+  try {
+    return normalizePathForComparison(realpathSync.native(path.resolve(value)));
+  } catch {
+    return normalizePathForComparison(path.resolve(value));
+  }
+}
+
+function normalizePathForComparison(value: string) {
+  const normalized = path.normalize(value);
+
+  if (process.platform !== "win32") {
+    return normalized;
+  }
+
+  return normalized.replace(/^\\\\\?\\/, "").replace(/\//g, "\\");
 }
 
 function readPackageJson(relativePath: string): { version?: string } {
