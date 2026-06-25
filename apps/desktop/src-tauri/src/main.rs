@@ -6203,6 +6203,7 @@ exit 1
     #[test]
     fn renderer_cli_info_redacts_auth_path_and_untrusted_version_text() {
         let workspace = test_workspace();
+        let workspace_path = workspace.to_string_lossy().to_string();
         let info = renderer_cli_info(CliInfo {
             codex_available: true,
             codex_version: Some(
@@ -6212,16 +6213,19 @@ exit 1
             auth_path: "/Users/example/.codex/auth.json".to_string(),
             auth_exists: true,
             auth_checked: true,
-            default_workspace_path: workspace.to_string_lossy().to_string(),
+            default_workspace_path: workspace_path.clone(),
         });
         let source = serde_json::to_string(&info).expect("cli info should serialize");
+        let encoded_workspace_path =
+            serde_json::to_string(&workspace_path).expect("workspace path should encode");
 
         assert_eq!(info.auth_path, "codex auth file (auth.json)");
         assert_eq!(
             info.codex_version.as_deref(),
             Some("codex 0.40.0 at [LOCAL_PATH] OPENAI_API_KEY=[REDACTED_KEY]")
         );
-        assert!(source.contains(&workspace.to_string_lossy().to_string()));
+        assert_eq!(info.default_workspace_path, workspace_path);
+        assert!(source.contains(&encoded_workspace_path));
         assert!(!source.contains("/Users/example"));
         assert!(!source.contains("abcdefghijkl"));
 
