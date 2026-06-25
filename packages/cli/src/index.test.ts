@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import Database from "better-sqlite3";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { MAX_REGULAR_TEXT_FILE_BYTES } from "@builder/core";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(import.meta.url);
 
 describe("builder CLI", () => {
   it("prints the CLI package version", () => {
@@ -1039,8 +1041,8 @@ describe("builder CLI", () => {
 
 function runBuilder(args: string[], env: NodeJS.ProcessEnv = {}) {
   return spawnSync(
-    "tsx",
-    ["--conditions", "development", "src/index.ts", "--", ...args],
+    process.execPath,
+    tsxBuilderArgs(args),
     {
       cwd: packageRoot,
       encoding: "utf8",
@@ -1055,8 +1057,8 @@ function runBuilder(args: string[], env: NodeJS.ProcessEnv = {}) {
 
 function runBuilderProcess(args: string[], env: NodeJS.ProcessEnv = {}): ChildProcessWithoutNullStreams {
   return spawn(
-    "tsx",
-    ["--conditions", "development", "src/index.ts", "--", ...args],
+    process.execPath,
+    tsxBuilderArgs(args),
     {
       cwd: packageRoot,
       env: {
@@ -1066,6 +1068,14 @@ function runBuilderProcess(args: string[], env: NodeJS.ProcessEnv = {}): ChildPr
       }
     }
   );
+}
+
+function tsxBuilderArgs(args: string[]): string[] {
+  return [tsxCliPath(), "--conditions", "development", "src/index.ts", "--", ...args];
+}
+
+function tsxCliPath(): string {
+  return path.join(path.dirname(require.resolve("tsx/package.json")), "dist", "cli.cjs");
 }
 
 async function waitForExit(child: ChildProcessWithoutNullStreams, timeoutMs: number) {
