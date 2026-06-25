@@ -1,8 +1,8 @@
-import { spawnSync } from "node:child_process";
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { spawnTsx } from "./script-test-utils.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const scriptFixtureDir = path.join(rootDir, "apps/desktop/src-tauri/target/release-verify-script-test");
@@ -23,7 +23,7 @@ describe("release manifest verification script", () => {
     writeFileSync(targetPath, "{\"secret\":\"super-secret-release-target\"}\n");
     symlinkSync(targetPath, manifestPath);
 
-    const result = spawnSync(tsxBinary(), ["scripts/verify-release-manifest.ts", repoRelativePath(manifestPath)], {
+    const result = spawnTsx(["scripts/verify-release-manifest.ts", repoRelativePath(manifestPath)], {
       cwd: rootDir,
       encoding: "utf8"
     });
@@ -42,7 +42,7 @@ describe("release manifest verification script", () => {
     const manifestPath = path.join(scriptFixtureDir, "builder-gear-release-manifest.json");
     writeFileSync(manifestPath, "x".repeat(2_097_153));
 
-    const result = spawnSync(tsxBinary(), ["scripts/verify-release-manifest.ts", repoRelativePath(manifestPath)], {
+    const result = spawnTsx(["scripts/verify-release-manifest.ts", repoRelativePath(manifestPath)], {
       cwd: rootDir,
       encoding: "utf8",
       shell: process.platform === "win32"
@@ -57,7 +57,7 @@ describe("release manifest verification script", () => {
   });
 
   it("rejects extra manifest arguments", () => {
-    const result = spawnSync(tsxBinary(), [
+    const result = spawnTsx([
       "scripts/verify-release-manifest.ts",
       "apps/desktop/src-tauri/target/a.json",
       "apps/desktop/src-tauri/target/b.json"
@@ -76,7 +76,7 @@ describe("release manifest verification script", () => {
   });
 
   it("rejects unsafe artifact roots before reading manifests", () => {
-    const result = spawnSync(tsxBinary(), [
+    const result = spawnTsx([
       "scripts/verify-release-manifest.ts",
       "--artifact-root",
       "../outside",
@@ -98,12 +98,4 @@ describe("release manifest verification script", () => {
 
 function repoRelativePath(absolutePath: string): string {
   return path.relative(rootDir, absolutePath).split(path.sep).join("/");
-}
-
-function tsxBinary(): string {
-  if (process.platform === "win32") {
-    return path.join(rootDir, "node_modules/.bin/tsx.cmd");
-  }
-
-  return path.join(rootDir, "node_modules/.bin/tsx");
 }

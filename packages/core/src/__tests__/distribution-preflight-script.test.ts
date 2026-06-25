@@ -1,9 +1,9 @@
-import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { spawnTsx } from "./script-test-utils.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const tempRoots: string[] = [];
@@ -86,8 +86,7 @@ function miniRepo(): string {
 }
 
 function runPreflight(fixture: string) {
-  return spawnSync(
-    tsxBinary(),
+  return spawnTsx(
     [path.join(fixture, "scripts/distribution-preflight.ts"), "--platform", "linux", "--channel", "internal"],
     {
       cwd: fixture,
@@ -95,12 +94,4 @@ function runPreflight(fixture: string) {
       shell: process.platform === "win32"
     }
   );
-}
-
-function tsxBinary(): string {
-  if (process.platform === "win32") {
-    return path.join(rootDir, "node_modules/.bin/tsx.cmd");
-  }
-
-  return path.join(rootDir, "node_modules/.bin/tsx");
 }

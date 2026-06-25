@@ -1,9 +1,9 @@
-import { spawnSync } from "node:child_process";
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { compareStableUpdaterFeeds } from "../release-check.js";
+import { spawnTsx } from "./script-test-utils.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const scriptFixtureDir = path.join(rootDir, "apps/desktop/src-tauri/target/release-updater-script-test");
@@ -154,7 +154,7 @@ describe("stable updater verification script", () => {
     writeFileSync(targetPath, "{\"secret\":\"super-secret-updater-target\"}\n");
     symlinkSync(targetPath, manifestPath);
 
-    const result = spawnSync(tsxBinary(), ["scripts/verify-stable-updater.ts", repoRelativePath(manifestPath)], {
+    const result = spawnTsx(["scripts/verify-stable-updater.ts", repoRelativePath(manifestPath)], {
       cwd: rootDir,
       encoding: "utf8"
     });
@@ -180,7 +180,7 @@ describe("stable updater verification script", () => {
       artifacts: []
     }));
 
-    const result = spawnSync(tsxBinary(), ["scripts/verify-stable-updater.ts", repoRelativePath(manifestPath)], {
+    const result = spawnTsx(["scripts/verify-stable-updater.ts", repoRelativePath(manifestPath)], {
       cwd: rootDir,
       encoding: "utf8",
       shell: process.platform === "win32"
@@ -230,7 +230,7 @@ describe("stable updater verification script", () => {
       ]
     }));
 
-    const result = spawnSync(tsxBinary(), ["scripts/verify-stable-updater.ts", repoRelativePath(manifestPath)], {
+    const result = spawnTsx(["scripts/verify-stable-updater.ts", repoRelativePath(manifestPath)], {
       cwd: rootDir,
       encoding: "utf8",
       shell: process.platform === "win32"
@@ -245,7 +245,7 @@ describe("stable updater verification script", () => {
   });
 
   it("rejects duplicate download verification options before network checks", () => {
-    const result = spawnSync(tsxBinary(), [
+    const result = spawnTsx([
       "scripts/verify-stable-updater.ts",
       "missing.json",
       "--verify-downloads",
@@ -266,7 +266,7 @@ describe("stable updater verification script", () => {
   });
 
   it("rejects unsafe artifact roots before updater network checks", () => {
-    const result = spawnSync(tsxBinary(), [
+    const result = spawnTsx([
       "scripts/verify-stable-updater.ts",
       "--artifact-root",
       "../outside",
@@ -288,12 +288,4 @@ describe("stable updater verification script", () => {
 
 function repoRelativePath(absolutePath: string): string {
   return path.relative(rootDir, absolutePath).split(path.sep).join("/");
-}
-
-function tsxBinary(): string {
-  if (process.platform === "win32") {
-    return path.join(rootDir, "node_modules/.bin/tsx.cmd");
-  }
-
-  return path.join(rootDir, "node_modules/.bin/tsx");
 }

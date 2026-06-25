@@ -1,9 +1,9 @@
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { spawnTsx } from "./script-test-utils.js";
 
 const rootDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../..");
 const helperUrl = pathToFileURL(path.join(rootDir, "scripts/script-file-safety.ts")).href;
@@ -173,17 +173,9 @@ function runHelperScript(source: string) {
   const scriptPath = path.join(root, "run.ts");
   writeFileSync(scriptPath, source);
 
-  return spawnSync(tsxBinary(), [scriptPath], {
+  return spawnTsx([scriptPath], {
     cwd: rootDir,
     encoding: "utf8",
     shell: process.platform === "win32"
   });
-}
-
-function tsxBinary(): string {
-  if (process.platform === "win32") {
-    return path.join(rootDir, "node_modules/.bin/tsx.cmd");
-  }
-
-  return path.join(rootDir, "node_modules/.bin/tsx");
 }

@@ -150,7 +150,8 @@ function collectReleaseEnvironmentInventories(repo: string, policy: Record<strin
 function githubEnvironmentExists(repo: string, environment: string): boolean {
   const result = spawnSync("gh", ["api", `repos/${repo}/environments/${encodeURIComponent(environment)}`, "--silent"], {
     cwd: rootDir,
-    encoding: "utf8"
+    encoding: "utf8",
+    shell: process.platform === "win32"
   });
 
   if (result.status === 0) {
@@ -189,7 +190,8 @@ function listGitHubEnvironmentSecrets(repo: string, environment: string): string
 function runGh(args: string[], label: string): string {
   const result = spawnSync("gh", args, {
     cwd: rootDir,
-    encoding: "utf8"
+    encoding: "utf8",
+    shell: process.platform === "win32"
   });
 
   if (result.error) {

@@ -148,7 +148,8 @@ function resolveGitHubRepository(): string {
 function githubEnvironmentExists(repo: string, environment: string): boolean {
   const result = spawnSync("gh", ["api", `repos/${repo}/environments/${encodeURIComponent(environment)}`, "--silent"], {
     cwd: rootDir,
-    encoding: "utf8"
+    encoding: "utf8",
+    shell: process.platform === "win32"
   });
 
   if (result.status === 0) {
@@ -174,7 +175,8 @@ function createGitHubEnvironment(repo: string, environment: string): boolean {
   ], {
     cwd: rootDir,
     encoding: "utf8",
-    input: JSON.stringify({ wait_timer: 0 })
+    input: JSON.stringify({ wait_timer: 0 }),
+    shell: process.platform === "win32"
   });
 
   if (result.error) {
@@ -191,7 +193,8 @@ function createGitHubEnvironment(repo: string, environment: string): boolean {
 function runGh(args: string[], label: string): string {
   const result = spawnSync("gh", args, {
     cwd: rootDir,
-    encoding: "utf8"
+    encoding: "utf8",
+    shell: process.platform === "win32"
   });
 
   if (result.error) {

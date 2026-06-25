@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -13,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { releaseCandidateGitHubEnvironmentRequirements } from "../release-check.js";
+import { spawnTsx } from "./script-test-utils.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const tempRoots: string[] = [];
@@ -237,14 +237,21 @@ function installMockGh(options: MockGhOptions): MockGh {
     chmodSync(ghPath, 0o755);
   }
 
+  const inheritedPath = process.env.PATH ?? process.env.Path ?? "";
+  const mockPath = `${binDir}${path.delimiter}${inheritedPath}`;
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    PATH: mockPath,
+    BUILDER_GEAR_FAKE_SECRET_VALUE: fakeSecretValue,
+    BUILDER_GEAR_MOCK_GH_LOG: logPath,
+    BUILDER_GEAR_MOCK_GH_STATE: statePath
+  };
+  if (process.platform === "win32") {
+    env.Path = mockPath;
+  }
+
   return {
-    env: {
-      ...process.env,
-      PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
-      BUILDER_GEAR_FAKE_SECRET_VALUE: fakeSecretValue,
-      BUILDER_GEAR_MOCK_GH_LOG: logPath,
-      BUILDER_GEAR_MOCK_GH_STATE: statePath
-    },
+    env,
     logPath
   };
 }
@@ -311,7 +318,7 @@ process.exit(2);
 }
 
 function runGitHubSetup(args: string[], mock: MockGh) {
-  return spawnSync(tsxBinary(), ["scripts/github-release-setup.ts", ...args], {
+  return spawnTsx(["scripts/github-release-setup.ts", ...args], {
     cwd: rootDir,
     encoding: "utf8",
     shell: process.platform === "win32",
@@ -320,7 +327,7 @@ function runGitHubSetup(args: string[], mock: MockGh) {
 }
 
 function runGitHubPreflight(args: string[], mock: MockGh) {
-  return spawnSync(tsxBinary(), ["scripts/github-release-preflight.ts", ...args], {
+  return spawnTsx(["scripts/github-release-preflight.ts", ...args], {
     cwd: rootDir,
     encoding: "utf8",
     shell: process.platform === "win32",
@@ -352,12 +359,4 @@ function completeSecretInventory(): Record<string, string[]> {
 
 function distributionPolicy(): Record<string, unknown> {
   return JSON.parse(readFileSync(path.join(rootDir, "release/distribution-policy.json"), "utf8")) as Record<string, unknown>;
-}
-
-function tsxBinary(): string {
-  if (process.platform === "win32") {
-    return path.join(rootDir, "node_modules/.bin/tsx.cmd");
-  }
-
-  return path.join(rootDir, "node_modules/.bin/tsx");
 }

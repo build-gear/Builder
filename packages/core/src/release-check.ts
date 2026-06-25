@@ -1240,7 +1240,7 @@ export function verifyMacOSAppBundle(options: VerifyMacOSAppBundleOptions): stri
     if (!executableStats.isFile()) {
       errors.push(`macOS app bundle executable is not a file: Contents/MacOS/${executableName}`);
     }
-    if ((executableStats.mode & 0o111) === 0) {
+    if (supportsPosixExecutableBits() && (executableStats.mode & 0o111) === 0) {
       errors.push(`macOS app bundle executable is not executable: Contents/MacOS/${executableName}`);
     }
   }
@@ -1306,6 +1306,10 @@ function validateOperationalFiles(repositoryFiles: Set<string>): string[] {
   }
 
   return errors;
+}
+
+function supportsPosixExecutableBits(): boolean {
+  return process.platform !== "win32";
 }
 
 function validateReadmeOperationsDocs(readmeText: string | undefined, repositoryFiles: Set<string>): string[] {

@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -19,6 +18,7 @@ import {
   type ReleaseManifest,
   type ReleaseProvenance
 } from "../release-check.js";
+import { spawnTsx } from "./script-test-utils.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const scriptFixtureDir = path.join(rootDir, "apps/desktop/src-tauri/target/release-script-test");
@@ -38,7 +38,7 @@ describe("release upload staging script", () => {
     mkdirSync(uploadDir, { recursive: true });
     writeFileSync(stalePath, "stale");
 
-    const result = spawnSync(tsxBinary(), ["scripts/stage-release-upload.ts", repoRelativePath(manifestPath)], {
+    const result = spawnTsx(["scripts/stage-release-upload.ts", repoRelativePath(manifestPath)], {
       cwd: rootDir,
       encoding: "utf8"
     });
@@ -72,7 +72,7 @@ describe("release upload staging script", () => {
     mkdirSync(path.dirname(uploadDir), { recursive: true });
     symlinkSync(scriptFixtureDir, uploadDir, "dir");
 
-    const result = spawnSync(tsxBinary(), ["scripts/stage-release-upload.ts", repoRelativePath(manifestPath)], {
+    const result = spawnTsx(["scripts/stage-release-upload.ts", repoRelativePath(manifestPath)], {
       cwd: rootDir,
       encoding: "utf8"
     });
@@ -98,7 +98,7 @@ describe("release upload staging script", () => {
     writeFileSync(targetPath, "{\"secret\":\"super-secret-release-target\"}\n");
     symlinkSync(targetPath, manifestPath);
 
-    const result = spawnSync(tsxBinary(), ["scripts/stage-release-upload.ts", repoRelativePath(manifestPath)], {
+    const result = spawnTsx(["scripts/stage-release-upload.ts", repoRelativePath(manifestPath)], {
       cwd: rootDir,
       encoding: "utf8"
     });
@@ -118,7 +118,7 @@ describe("release upload staging script", () => {
     const manifestPath = path.join(scriptFixtureDir, "builder-gear-release-manifest.json");
     writeFileSync(manifestPath, "x".repeat(2_097_153));
 
-    const result = spawnSync(tsxBinary(), ["scripts/stage-release-upload.ts", repoRelativePath(manifestPath)], {
+    const result = spawnTsx(["scripts/stage-release-upload.ts", repoRelativePath(manifestPath)], {
       cwd: rootDir,
       encoding: "utf8",
       shell: process.platform === "win32"
@@ -133,7 +133,7 @@ describe("release upload staging script", () => {
   });
 
   it("rejects unknown options before reading release files", () => {
-    const result = spawnSync(tsxBinary(), ["scripts/stage-release-upload.ts", "--dry-run", "missing.json"], {
+    const result = spawnTsx(["scripts/stage-release-upload.ts", "--dry-run", "missing.json"], {
       cwd: rootDir,
       encoding: "utf8",
       shell: process.platform === "win32"
@@ -277,12 +277,4 @@ function listStagedFiles(): string[] {
       files.push(path.relative(uploadDir, entryPath).split(path.sep).join("/"));
     }
   }
-}
-
-function tsxBinary(): string {
-  if (process.platform === "win32") {
-    return path.join(rootDir, "node_modules/.bin/tsx.cmd");
-  }
-
-  return path.join(rootDir, "node_modules/.bin/tsx");
 }

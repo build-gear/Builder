@@ -1,9 +1,9 @@
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { spawnTsx } from "./script-test-utils.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const tempRoots: string[] = [];
@@ -76,17 +76,9 @@ function miniRepo(): string {
 }
 
 function runPrivacyScan(fixture: string) {
-  return spawnSync(tsxBinary(), [path.join(fixture, "scripts/privacy-scan.ts")], {
+  return spawnTsx([path.join(fixture, "scripts/privacy-scan.ts")], {
     cwd: fixture,
     encoding: "utf8",
     shell: process.platform === "win32"
   });
-}
-
-function tsxBinary(): string {
-  if (process.platform === "win32") {
-    return path.join(rootDir, "node_modules/.bin/tsx.cmd");
-  }
-
-  return path.join(rootDir, "node_modules/.bin/tsx");
 }

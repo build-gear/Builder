@@ -628,11 +628,12 @@ fn detect_codex_cli_version_with_timeout(codex_bin: &str, timeout: Duration) -> 
             }
         }
     };
+    let status = status?;
     let output = stdout_reader
         .and_then(|reader| reader.join().ok())
         .unwrap_or_default();
 
-    if !status?.success() {
+    if !status.success() {
         return None;
     }
 

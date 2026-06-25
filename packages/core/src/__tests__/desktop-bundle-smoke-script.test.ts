@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
@@ -10,6 +9,7 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { spawnTsx } from "./script-test-utils.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const scriptFixtureDir = path.join(rootDir, "apps/desktop/src-tauri/target/desktop-bundle-smoke-script-test");
@@ -23,7 +23,7 @@ describe("desktop bundle smoke script", () => {
     const appPath = path.join(scriptFixtureDir, "Builder Gear.app");
     writeMacOSAppFixture(appPath, "builder-gear-desktop", true);
 
-    const result = spawnSync(tsxBinary(), [
+    const result = spawnTsx([
       "scripts/desktop-bundle-smoke.ts",
       "--platform",
       "macos",
@@ -46,7 +46,7 @@ describe("desktop bundle smoke script", () => {
     const appPath = path.join(scriptFixtureDir, "Builder Gear.app");
     writeMacOSAppFixture(appPath, "builder-gear-desktop", false);
 
-    const result = spawnSync(tsxBinary(), [
+    const result = spawnTsx([
       "scripts/desktop-bundle-smoke.ts",
       "--platform",
       "macos",
@@ -68,7 +68,7 @@ describe("desktop bundle smoke script", () => {
   it("verifies Windows MSI and NSIS package headers", () => {
     writeWindowsDistributionArtifacts(scriptFixtureDir);
 
-    const result = spawnSync(tsxBinary(), [
+    const result = spawnTsx([
       "scripts/desktop-bundle-smoke.ts",
       "--platform",
       "windows",
@@ -91,7 +91,7 @@ describe("desktop bundle smoke script", () => {
   it("rejects Windows packages with invalid executable headers", () => {
     writeWindowsDistributionArtifacts(scriptFixtureDir, { invalidExe: true });
 
-    const result = spawnSync(tsxBinary(), [
+    const result = spawnTsx([
       "scripts/desktop-bundle-smoke.ts",
       "--platform",
       "windows",
@@ -114,7 +114,7 @@ describe("desktop bundle smoke script", () => {
   it("verifies Linux AppImage deb and rpm package headers", () => {
     writeLinuxDistributionArtifacts(scriptFixtureDir);
 
-    const result = spawnSync(tsxBinary(), [
+    const result = spawnTsx([
       "scripts/desktop-bundle-smoke.ts",
       "--platform",
       "linux",
@@ -144,7 +144,7 @@ describe("desktop bundle smoke script", () => {
     mkdirSync(targetPath, { recursive: true });
     symlinkSync(targetPath, linkPath, "dir");
 
-    const result = spawnSync(tsxBinary(), [
+    const result = spawnTsx([
       "scripts/desktop-bundle-smoke.ts",
       "--platform",
       "macos",
@@ -163,7 +163,7 @@ describe("desktop bundle smoke script", () => {
   });
 
   it("rejects unsafe artifact roots", () => {
-    const result = spawnSync(tsxBinary(), [
+    const result = spawnTsx([
       "scripts/desktop-bundle-smoke.ts",
       "--platform",
       "macos",
@@ -246,12 +246,4 @@ function writeMachOExecutableFixture(executablePath: string): void {
 
 function repoRelativePath(absolutePath: string): string {
   return path.relative(rootDir, absolutePath).split(path.sep).join("/");
-}
-
-function tsxBinary(): string {
-  if (process.platform === "win32") {
-    return path.join(rootDir, "node_modules/.bin/tsx.cmd");
-  }
-
-  return path.join(rootDir, "node_modules/.bin/tsx");
 }

@@ -224,7 +224,7 @@ function verifyPackagedFiles(platform: ReleasePlatform, artifactPaths: string[],
       errors.push(`desktop artifact must not be empty: ${relativePath}`);
       continue;
     }
-    if (platform === "linux" && artifactPath.endsWith(".AppImage") && (stats.mode & 0o111) === 0) {
+    if (supportsPosixExecutableBits() && platform === "linux" && artifactPath.endsWith(".AppImage") && (stats.mode & 0o111) === 0) {
       errors.push(`Linux AppImage artifact is not executable: ${relativePath}`);
     }
     errors.push(...verifyArtifactHeader(platform, artifactPath, artifactRoot));
@@ -336,7 +336,7 @@ function verifyMacOSAppExecutableSmoke(appPath: string, artifactRoot: string): s
     errors.push(`macOS app bundle executable must be a regular file: ${executableRelativePath}`);
     return errors;
   }
-  if ((executableStats.mode & 0o111) === 0) {
+  if (supportsPosixExecutableBits() && (executableStats.mode & 0o111) === 0) {
     errors.push(`macOS app bundle executable is not executable: ${executableRelativePath}`);
   }
   if (executableStats.size < MACHO_MIN_BYTES) {
@@ -456,4 +456,8 @@ function rootRelativePath(baseDir: string, absolutePath: string): string {
 function safeErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.replaceAll(rootDir, "[REPO_ROOT]");
+}
+
+function supportsPosixExecutableBits(): boolean {
+  return process.platform !== "win32";
 }

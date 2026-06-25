@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +9,7 @@ import {
   type ReleaseManifest,
   type ReleaseProvenance
 } from "../release-check.js";
+import { spawnTsx } from "./script-test-utils.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const scriptFixtureDir = path.join(rootDir, "apps/desktop/src-tauri/target/service-readiness-script-test");
@@ -117,7 +117,7 @@ describe("service readiness script", () => {
 });
 
 function runServiceReadiness(args: string[]) {
-  return spawnSync(tsxBinary(), ["scripts/service-readiness.ts", ...args], {
+  return spawnTsx(["scripts/service-readiness.ts", ...args], {
     cwd: rootDir,
     encoding: "utf8",
     shell: process.platform === "win32"
@@ -268,12 +268,4 @@ function writeJson(filePath: string, value: unknown): void {
 
 function repoRelativePath(absolutePath: string): string {
   return path.relative(rootDir, absolutePath).split(path.sep).join("/");
-}
-
-function tsxBinary(): string {
-  if (process.platform === "win32") {
-    return path.join(rootDir, "node_modules/.bin/tsx.cmd");
-  }
-
-  return path.join(rootDir, "node_modules/.bin/tsx");
 }
