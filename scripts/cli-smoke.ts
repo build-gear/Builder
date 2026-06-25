@@ -380,27 +380,45 @@ function runCommand(command: string, args: string[], cwd: string, env: NodeJS.Pr
   const result = spawnSync(command, args, {
     cwd,
     encoding: "utf8",
+    shell: shouldRunThroughShell(command),
     env: {
       ...process.env,
       ...env
     }
   });
+  const stdout = outputText(result.stdout);
+  const stderr = outputText(result.stderr);
 
-  if (result.status !== 0) {
+  if (result.error || result.status !== 0) {
     throw new Error([
       `CLI smoke command failed: ${command} ${args.join(" ")}`,
       `cwd: ${cwd}`,
       `exit code: ${result.status ?? "unknown"}`,
-      `stdout: ${result.stdout.trim()}`,
-      `stderr: ${result.stderr.trim()}`
-    ].join("\n"));
+      result.error ? `spawn error: ${result.error.message}` : undefined,
+      `stdout: ${stdout.trim()}`,
+      `stderr: ${stderr.trim()}`
+    ].filter(Boolean).join("\n"));
   }
 
-  return result;
+  return { ...result, stdout, stderr };
 }
 
 function commandName(name: string) {
   return process.platform === "win32" ? `${name}.cmd` : name;
+}
+
+function shouldRunThroughShell(command: string) {
+  return process.platform === "win32" && command.toLowerCase().endsWith(".cmd");
+}
+
+function outputText(value: unknown) {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Buffer.isBuffer(value)) {
+    return value.toString("utf8");
+  }
+  return "";
 }
 
 function runCli(args: string[], env: NodeJS.ProcessEnv = {}) {
