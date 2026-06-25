@@ -37,7 +37,10 @@ function nodeLicenseEntries(rootDir: string): DependencyLicenseEntry[] {
 }
 
 function rustLicenseEntries(rootDir: string): DependencyLicenseEntry[] {
-  const output = runCapture("cargo", ["metadata", "--format-version", "1"], path.join(rootDir, "apps/desktop/src-tauri"));
+  const output = runCapture("cargo", ["metadata", "--format-version", "1", "--locked"], path.join(rootDir, "apps/desktop/src-tauri"), {
+    attempts: 3,
+    retryDelayMs: 1000
+  });
   const metadata = JSON.parse(output) as {
     packages: Array<{
       name: string;
@@ -62,18 +65,36 @@ function rustLicenseEntries(rootDir: string): DependencyLicenseEntry[] {
     }));
 }
 
-function runCapture(command: string, args: string[], cwd: string): string {
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: "utf8",
-    maxBuffer: 128 * 1024 * 1024,
-    shell: process.platform === "win32"
-  });
+function runCapture(command: string, args: string[], cwd: string, options: { attempts?: number; retryDelayMs?: number } = {}): string {
+  const attempts = options.attempts ?? 1;
+  let lastError = "";
 
-  if (result.status !== 0) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const result = spawnSync(command, args, {
+      cwd,
+      encoding: "utf8",
+      maxBuffer: 128 * 1024 * 1024,
+      shell: process.platform === "win32"
+    });
+
+    if (result.status === 0) {
+      return result.stdout;
+    }
+
     const stderr = result.stderr.trim();
-    throw new Error(`${command} ${args.join(" ")} failed${stderr ? `: ${stderr}` : ""}`);
+    lastError = `${command} ${args.join(" ")} failed${stderr ? `: ${stderr}` : ""}`;
+    if (attempt < attempts) {
+      sleepSync(options.retryDelayMs ?? 0);
+    }
   }
 
-  return result.stdout;
+  throw new Error(lastError);
+}
+
+function sleepSync(delayMs: number): void {
+  if (delayMs <= 0) {
+    return;
+  }
+
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
 }
