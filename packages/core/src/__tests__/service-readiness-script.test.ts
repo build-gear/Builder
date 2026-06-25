@@ -47,6 +47,10 @@ describe("service readiness script", () => {
         message: `Verified ${manifestPath}`
       }),
       expect.objectContaining({
+        id: "hosted-ci",
+        status: "skip"
+      }),
+      expect.objectContaining({
         id: "github-release-environment",
         status: "skip"
       }),

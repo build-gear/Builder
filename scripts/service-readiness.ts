@@ -184,6 +184,7 @@ function parseArgs(argv: string[]): { ok: true; args: ParsedArgs } | { ok: false
 function runReadinessAudit(args: ParsedArgs): ReadinessCheck[] {
   return [
     verifyLocalReleaseManifest(args),
+    verifyHostedCiStatus(args),
     verifyGitHubReleaseEnvironment(args),
     verifyStableUpdaterFeed(args)
   ];
@@ -227,6 +228,150 @@ function verifyLocalReleaseManifest(args: ParsedArgs): ReadinessCheck {
     message: "Release manifest verification failed",
     action: "Regenerate release evidence with pnpm release:check:fast or the signed distribution gate.",
     detail: safeCommandOutput(result)
+  };
+}
+
+function verifyHostedCiStatus(args: ParsedArgs): ReadinessCheck {
+  if (args.skipGitHub) {
+    return {
+      id: "hosted-ci",
+      title: "Hosted CI",
+      status: "skip",
+      message: "Skipped by --skip-github",
+      action: "Run again with --repo OWNER/REPO before dispatching or promoting a release candidate."
+    };
+  }
+
+  if (!args.repo) {
+    return {
+      id: "hosted-ci",
+      title: "Hosted CI",
+      status: "fail",
+      message: "Repository not provided",
+      action: "Pass --repo OWNER/REPO so the audit can verify the current commit has a successful hosted CI run."
+    };
+  }
+
+  const head = runGit(["rev-parse", "HEAD"]);
+  if (head.status !== 0) {
+    return {
+      id: "hosted-ci",
+      title: "Hosted CI",
+      status: "fail",
+      message: "Could not resolve current git commit",
+      action: "Run from a git checkout and make sure HEAD is available before release promotion.",
+      detail: safeCommandOutput(head)
+    };
+  }
+
+  const headSha = (head.stdout ?? "").trim();
+  if (!/^[a-f0-9]{40}$/i.test(headSha)) {
+    return {
+      id: "hosted-ci",
+      title: "Hosted CI",
+      status: "fail",
+      message: "Current git commit SHA is invalid",
+      action: "Run from a complete git checkout before release promotion.",
+      detail: safeCommandOutput(head)
+    };
+  }
+
+  const status = runGit(["status", "--porcelain=v1"]);
+  if (status.status !== 0) {
+    return {
+      id: "hosted-ci",
+      title: "Hosted CI",
+      status: "fail",
+      message: "Could not inspect git worktree state",
+      action: "Run from a readable git checkout before release promotion.",
+      detail: safeCommandOutput(status)
+    };
+  }
+
+  if ((status.stdout ?? "").trim()) {
+    return {
+      id: "hosted-ci",
+      title: "Hosted CI",
+      status: "fail",
+      message: "Git worktree has uncommitted changes",
+      action: "Commit, push, and wait for hosted CI to pass so the audited build matches the tested commit.",
+      detail: safeCommandOutput(status)
+    };
+  }
+
+  const runsResult = runGh([
+    "run",
+    "list",
+    "--repo",
+    args.repo,
+    "--commit",
+    headSha,
+    "--workflow",
+    "CI",
+    "--limit",
+    "20",
+    "--json",
+    "databaseId,status,conclusion,headSha,url,createdAt"
+  ]);
+  if (runsResult.status !== 0) {
+    return {
+      id: "hosted-ci",
+      title: "Hosted CI",
+      status: "fail",
+      message: "Could not inspect hosted CI runs",
+      action: "Authenticate gh with Actions read access, then rerun the readiness audit.",
+      detail: safeCommandOutput(runsResult)
+    };
+  }
+
+  let runs: GitHubRunListEntry[];
+  try {
+    runs = parseGitHubRunList(runsResult.stdout ?? "");
+  } catch (error) {
+    return {
+      id: "hosted-ci",
+      title: "Hosted CI",
+      status: "fail",
+      message: "Hosted CI response could not be parsed",
+      action: "Rerun the readiness audit after confirming gh can return JSON for workflow runs.",
+      detail: safeScriptErrorMessage(rootDir, error)
+    };
+  }
+
+  const matchingRuns = runs.filter((run) => run.headSha?.toLowerCase() === headSha.toLowerCase());
+  const successfulRun = matchingRuns.find((run) => run.status === "completed" && run.conclusion === "success");
+  if (successfulRun) {
+    return {
+      id: "hosted-ci",
+      title: "Hosted CI",
+      status: "pass",
+      message: `CI passed for ${headSha.slice(0, 12)} in run ${successfulRun.databaseId ?? "unknown"}`,
+      detail: successfulRun.url
+    };
+  }
+
+  const runningRun = matchingRuns.find((run) => run.status !== "completed");
+  if (runningRun) {
+    return {
+      id: "hosted-ci",
+      title: "Hosted CI",
+      status: "fail",
+      message: `CI is still ${runningRun.status} for ${headSha.slice(0, 12)}`,
+      action: "Wait for the hosted CI run to complete successfully before promoting the build.",
+      detail: runningRun.url
+    };
+  }
+
+  const failedRun = matchingRuns.find((run) => run.status === "completed");
+  return {
+    id: "hosted-ci",
+    title: "Hosted CI",
+    status: "fail",
+    message: failedRun
+      ? `CI completed with ${failedRun.conclusion ?? "unknown"} for ${headSha.slice(0, 12)}`
+      : `No CI run found for ${headSha.slice(0, 12)}`,
+    action: "Push the current commit and wait for the CI workflow to pass before release promotion.",
+    detail: failedRun?.url
   };
 }
 
@@ -418,8 +563,54 @@ function runPnpm(args: string[]) {
   });
 }
 
+function runGit(args: string[]) {
+  return spawnSync("git", args, {
+    cwd: rootDir,
+    encoding: "utf8",
+    shell: process.platform === "win32"
+  });
+}
+
+function runGh(args: string[]) {
+  return spawnSync("gh", args, {
+    cwd: rootDir,
+    encoding: "utf8",
+    shell: process.platform === "win32"
+  });
+}
+
 function pnpmBinary(): string {
   return process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+}
+
+interface GitHubRunListEntry {
+  databaseId?: number;
+  status?: string;
+  conclusion?: string;
+  headSha?: string;
+  url?: string;
+}
+
+function parseGitHubRunList(text: string): GitHubRunListEntry[] {
+  const parsed = JSON.parse(text) as unknown;
+  if (!Array.isArray(parsed)) {
+    throw new Error("expected an array of workflow runs");
+  }
+
+  return parsed.map((entry) => {
+    if (!entry || typeof entry !== "object") {
+      throw new Error("workflow run entry must be an object");
+    }
+
+    const record = entry as Record<string, unknown>;
+    return {
+      databaseId: typeof record.databaseId === "number" ? record.databaseId : undefined,
+      status: typeof record.status === "string" ? record.status : undefined,
+      conclusion: typeof record.conclusion === "string" ? record.conclusion : undefined,
+      headSha: typeof record.headSha === "string" ? record.headSha : undefined,
+      url: typeof record.url === "string" ? record.url : undefined
+    };
+  });
 }
 
 function aggregateStatus(checks: ReadinessCheck[]): ReadinessStatus {
