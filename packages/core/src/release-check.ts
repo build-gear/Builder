@@ -3385,6 +3385,7 @@ function validateStableUpdaterVerificationWorkflow(workflow: WorkflowFile): stri
     ["\"$event\" != \"workflow_dispatch\"", "stable updater verification workflow must require manually dispatched release candidates"],
     ["\"$conclusion\" != \"success\"", "stable updater verification workflow must require a successful release candidate run"],
     ["case \"$head_branch\" in", "stable updater verification workflow must require release candidate runs from main or release branches"],
+    ["release/*/*)", "stable updater verification workflow must reject nested release candidate branches"],
     ["[[ \"$head_sha\" =~ ^[a-f0-9]{40}$ ]]", "stable updater verification workflow must require a valid release candidate commit SHA"],
     ["printf 'head_sha=%s\\n' \"$head_sha\" >> \"$GITHUB_OUTPUT\"", "stable updater verification workflow must expose the selected release commit as a step output"],
     ["printf 'RELEASE_CANDIDATE_HEAD_SHA=%s\\n' \"$head_sha\" >> \"$GITHUB_ENV\"", "stable updater verification workflow must carry the selected release commit into manifest verification"],
@@ -3451,7 +3452,7 @@ function validateStableUpdaterVerificationBranchGuard(content: string): string[]
     if (!/timeout-minutes:\s*(?:[1-9]|10)\b/.test(guardJob)) {
       errors.push("stable updater verification ref guard must have a bounded timeout");
     }
-    if (!/refs\/heads\/main\|refs\/heads\/release\/\*/.test(guardJob) || !/\bexit 1\b/.test(guardJob)) {
+    if (!/refs\/heads\/main\|refs\/heads\/release\/\*/.test(guardJob) || !/refs\/heads\/release\/\*\/\*/.test(guardJob) || !/\bexit 1\b/.test(guardJob)) {
       errors.push("stable updater verification workflow must fail before production checks on non-release refs");
     }
   }
@@ -3466,6 +3467,10 @@ function validateStableUpdaterVerificationBranchGuard(content: string): string[]
 
   if (!guarded) {
     errors.push("stable updater verification workflow must run only from main or release branches");
+  }
+
+  if (!/release\/\*\/\*\)/.test(verifyJob)) {
+    errors.push("stable updater verification workflow must reject nested release candidate branches");
   }
 
   return [...new Set(errors)];
@@ -3522,7 +3527,7 @@ function validateReleaseCandidateBranchGuard(content: string): string[] {
     if (!/timeout-minutes:\s*(?:[1-9]|10)\b/.test(guardJob)) {
       errors.push("release candidate ref guard must have a bounded timeout");
     }
-    if (!/refs\/heads\/main\|refs\/heads\/release\/\*/.test(guardJob) || !/\bexit 1\b/.test(guardJob)) {
+    if (!/refs\/heads\/main\|refs\/heads\/release\/\*/.test(guardJob) || !/refs\/heads\/release\/\*\/\*/.test(guardJob) || !/\bexit 1\b/.test(guardJob)) {
       errors.push("release candidate workflow must fail before signing when dispatched from non-release refs");
     }
   }

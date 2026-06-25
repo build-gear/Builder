@@ -40,10 +40,14 @@ jobs:
           set -euo pipefail
 
           case "$GITHUB_REF" in
+            refs/heads/release/*/*)
+              echo "Release candidates must run from main or single-segment release/* refs."
+              exit 1
+              ;;
             refs/heads/main|refs/heads/release/*)
               ;;
             *)
-              echo "Release candidates must run from main or release/** refs."
+              echo "Release candidates must run from main or single-segment release/* refs."
               exit 1
               ;;
           esac

@@ -41,10 +41,14 @@ jobs:
           set -euo pipefail
 
           case "$GITHUB_REF" in
+            refs/heads/release/*/*)
+              echo "Stable updater verification must run from main or single-segment release/* refs."
+              exit 1
+              ;;
             refs/heads/main|refs/heads/release/*)
               ;;
             *)
-              echo "Stable updater verification must run from main or release/** refs."
+              echo "Stable updater verification must run from main or single-segment release/* refs."
               exit 1
               ;;
           esac
@@ -94,10 +98,14 @@ jobs:
           fi
 
           case "$head_branch" in
+            release/*/*)
+              echo "Selected release candidate must come from main or single-segment release/* branches."
+              exit 1
+              ;;
             main|release/*)
               ;;
             *)
-              echo "Selected release candidate must come from main or release/** branches."
+              echo "Selected release candidate must come from main or single-segment release/* branches."
               exit 1
               ;;
           esac

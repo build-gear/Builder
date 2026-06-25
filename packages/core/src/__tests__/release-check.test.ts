@@ -1702,6 +1702,9 @@ describe("release readiness checks", () => {
       "      - name: Require main or release ref",
       "        run: |",
       "          case \"$GITHUB_REF\" in",
+      "            refs/heads/release/*/*)",
+      "              exit 1",
+      "              ;;",
       "            refs/heads/main|refs/heads/release/*)",
       "              ;;",
       "            *)",
@@ -1905,6 +1908,9 @@ describe("release readiness checks", () => {
               "      - name: Require main or release ref",
               "        run: |",
               "          case \"$GITHUB_REF\" in",
+              "            refs/heads/release/*/*)",
+              "              exit 1",
+              "              ;;",
               "            refs/heads/main|refs/heads/release/*)",
               "              ;;",
               "            *)",
@@ -2090,6 +2096,9 @@ describe("release readiness checks", () => {
       "      - name: Require main or release ref",
       "        run: |",
       "          case \"$GITHUB_REF\" in",
+      "            refs/heads/release/*/*)",
+      "              exit 1",
+      "              ;;",
       "            refs/heads/main|refs/heads/release/*)",
       "              ;;",
       "            *)",
@@ -2128,6 +2137,9 @@ describe("release readiness checks", () => {
       "            exit 1",
       "          fi",
       "          case \"$head_branch\" in",
+      "            release/*/*)",
+      "              exit 1",
+      "              ;;",
       "            main|release/*)",
       "              ;;",
       "            *)",
@@ -2206,7 +2218,7 @@ describe("release readiness checks", () => {
           .replace("          if [ \"$workflow_name\" != \"Release Candidate\" ]; then\n            exit 1\n          fi\n", "")
           .replace("          if [ \"$event\" != \"workflow_dispatch\" ]; then\n            exit 1\n          fi\n", "")
           .replace("          if [ \"$conclusion\" != \"success\" ]; then\n            exit 1\n          fi\n", "")
-          .replace("          case \"$head_branch\" in\n            main|release/*)\n              ;;\n            *)\n              exit 1\n              ;;\n          esac\n", "")
+          .replace("          case \"$head_branch\" in\n            release/*/*)\n              exit 1\n              ;;\n            main|release/*)\n              ;;\n            *)\n              exit 1\n              ;;\n          esac\n", "")
           .replace("          if ! [[ \"$head_sha\" =~ ^[a-f0-9]{40}$ ]]; then\n            exit 1\n          fi\n", "")
           .replace("          printf 'head_sha=%s\\n' \"$head_sha\" >> \"$GITHUB_OUTPUT\"\n", "")
           .replace("          printf 'RELEASE_CANDIDATE_HEAD_SHA=%s\\n' \"$head_sha\" >> \"$GITHUB_ENV\"\n", "")
