@@ -207,11 +207,11 @@ export async function* runCodexExec(
   };
   const terminateChildWithGrace = (target: ChildProcessWithoutNullStreams) => {
     if (!childClosed) {
-      target.kill();
+      terminateChild(target, false);
       if (!forceKillTimer) {
         forceKillTimer = setTimeout(() => {
           if (!childClosed) {
-            target.kill("SIGKILL");
+            terminateChild(target, true);
           }
         }, CODEX_FORCE_KILL_GRACE_MS);
         forceKillTimer.unref?.();
@@ -308,9 +308,22 @@ export async function* runCodexExec(
       clearTimeout(forceKillTimer);
     }
     if (!childClosed) {
-      child.kill();
+      terminateChild(child, true);
     }
   }
+}
+
+function terminateChild(target: ChildProcessWithoutNullStreams, force: boolean): void {
+  if (process.platform === "win32" && target.pid !== undefined) {
+    const killer = spawn("taskkill", ["/pid", String(target.pid), "/T", "/F"], {
+      stdio: "ignore",
+      windowsHide: true
+    });
+    killer.on("error", () => undefined);
+    return;
+  }
+
+  target.kill(force ? "SIGKILL" : undefined);
 }
 
 function normalizeRunTimeoutMs(timeoutMs: number | undefined): number | undefined {
