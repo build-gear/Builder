@@ -41,7 +41,7 @@ export interface CodexInvocation {
 export type SpawnFactory = (
   command: string,
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv }
+  options: { cwd: string; env: NodeJS.ProcessEnv; shell?: boolean }
 ) => ChildProcessWithoutNullStreams;
 
 export interface RunCodexOptions {
@@ -96,7 +96,8 @@ export async function detectCodexCliVersion(codexBin = "codex"): Promise<string 
   try {
     const { stdout } = await execFileAsync(codexBin, ["--version"], {
       timeout: 5000,
-      env: codexChildEnv(process.env)
+      env: codexChildEnv(process.env),
+      shell: process.platform === "win32"
     });
     return stdout.trim() || undefined;
   } catch {
@@ -172,7 +173,8 @@ export async function* runCodexExec(
   try {
     child = spawnFactory(invocation.bin, invocation.args, {
       cwd: request.workspacePath,
-      env: codexChildEnv(options.env ?? process.env)
+      env: codexChildEnv(options.env ?? process.env),
+      shell: process.platform === "win32"
     });
   } catch (error) {
     yield event("error", {

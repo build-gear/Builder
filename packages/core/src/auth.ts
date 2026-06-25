@@ -80,7 +80,7 @@ export function redactSecretLikeText(input: string): string {
 
 export function redactLocalPathLikeText(input: string): string {
   return input
-    .replace(/file:\/\/\/[^"'\s)\n\r]+/g, "[LOCAL_FILE_URL]")
+    .replace(/file:\/\/\/?[^"'\s)\n\r]+/g, "[LOCAL_FILE_URL]")
     .replace(/\/(?:Users|home|tmp|var|private\/var)\/[^"'\s)\n\r]+/g, "[LOCAL_PATH]")
     .replace(/(^|[\s"'(])\/[^"'\s)\n\r]+/g, "$1[LOCAL_PATH]")
     .replace(/[A-Za-z]:\\[^"'\s)\n\r]+/g, "[LOCAL_PATH]")

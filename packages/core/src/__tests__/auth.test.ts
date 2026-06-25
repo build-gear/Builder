@@ -90,6 +90,7 @@ describe("codex auth inspection", () => {
       "external workspace failed: /Volumes/Client Drive/builder/workspace",
       "container workspace failed: /workspace/private/project",
       "prompt file is missing: file:///Users/example/private/prompt.txt",
+      "windows model file is private: file://C:\\Users\\example\\model.txt",
       "windows path failed: C:\\Users\\example\\AppData\\Local\\Builder\\auth.json",
       "home path failed: ~/.codex/auth.json"
     ].join("\n"));

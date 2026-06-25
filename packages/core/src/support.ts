@@ -80,7 +80,7 @@ export function redactSupportBundleText(input: string, workspacePath: string): s
   }
 
   return output
-    .replace(/file:\/\/\/[^"'\s)]+/g, "[LOCAL_FILE_URL]")
+    .replace(/file:\/\/\/?[^"'\s)]+/g, "[LOCAL_FILE_URL]")
     .replace(/\/(?:Users|home|tmp|var|private\/var)\/[^"'\s)]+/g, "[LOCAL_PATH]")
     .replace(/(^|[\s"'(])\/[^"'\s)]+/g, "$1[LOCAL_PATH]")
     .replace(/[A-Za-z]:\\[^"'\s)]+/g, "[LOCAL_PATH]")
