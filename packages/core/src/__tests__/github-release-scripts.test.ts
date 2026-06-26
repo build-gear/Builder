@@ -170,7 +170,12 @@ describe("GitHub release setup and preflight scripts", () => {
         },
         requiredDeploymentBranches: requirement.deploymentBranches,
         missingDeploymentBranches: [],
-        missingSecrets: []
+        missingSecrets: [],
+        remediation: {
+          setupCommand: `pnpm release:github-setup -- --repo ${repository} --apply`,
+          secretCommands: [],
+          branchPolicyCommands: []
+        }
       }))
     );
     expect(readMockGhLog(mock).filter((entry) => entry.args.slice(0, 2).join(" ") === "secret list")).toHaveLength(2);
@@ -193,6 +198,7 @@ describe("GitHub release setup and preflight scripts", () => {
     expect(output).toContain("github release preflight: GitHub release environment internal-release is missing deployment branch policy: release/*");
     expect(output).toContain("github release preflight: GitHub release environment production is missing deployment branch policy: main");
     expect(output).toContain("\"missingDeploymentBranches\": [");
+    expect(output).toContain(`gh api --method POST repos/${repository}/environments/internal-release/deployment-branch-policies --field name=release/* --field type=branch`);
   });
 
   it("fails preflight with missing secret names only", () => {
@@ -213,6 +219,7 @@ describe("GitHub release setup and preflight scripts", () => {
     expect(output).toContain("github release preflight: GitHub release environment production is missing secret: TAURI_SIGNING_PRIVATE_KEY");
     expect(output).toContain("\"missingSecrets\": [");
     expect(output).toContain("\"TAURI_SIGNING_PRIVATE_KEY\"");
+    expect(output).toContain(`gh secret set TAURI_SIGNING_PRIVATE_KEY --env production --repo ${repository}`);
     expect(output).not.toContain(fakeSecretValue);
   });
 
@@ -239,7 +246,16 @@ describe("GitHub release setup and preflight scripts", () => {
         requiredSecrets: requirement.requiredSecrets,
         requiredDeploymentBranches: requirement.deploymentBranches,
         missingDeploymentBranches: [],
-        missingSecrets: []
+        missingSecrets: [],
+        remediation: {
+          setupCommand: `pnpm release:github-setup -- --repo ${repository} --apply`,
+          secretCommands: requirement.requiredSecrets.map((secretName) => (
+            `gh secret set ${secretName} --env ${requirement.environment} --repo ${repository}`
+          )),
+          branchPolicyCommands: requirement.deploymentBranches.map((branchPattern) => (
+            `gh api --method POST repos/${repository}/environments/${encodeURIComponent(requirement.environment)}/deployment-branch-policies --field name=${branchPattern} --field type=branch`
+          ))
+        }
       }))
     );
     expect(readMockGhLog(mock).filter((entry) => entry.args.slice(0, 2).join(" ") === "secret list")).toHaveLength(0);

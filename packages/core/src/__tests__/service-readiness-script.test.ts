@@ -1,4 +1,5 @@
-import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
@@ -13,10 +14,16 @@ import { spawnTsx } from "./script-test-utils.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const scriptFixtureDir = path.join(rootDir, "apps/desktop/src-tauri/target/service-readiness-script-test");
+const tempRoots: string[] = [];
+const repository = "build-gear/Builder";
+const fakeSecretValue = "service-readiness-secret-value";
 
 describe("service readiness script", () => {
   afterEach(() => {
     rmSync(scriptFixtureDir, { recursive: true, force: true });
+    for (const root of tempRoots.splice(0)) {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("verifies local release evidence while marking explicitly skipped external gates", () => {
@@ -108,6 +115,46 @@ describe("service readiness script", () => {
     expect(output).not.toContain("at ");
   });
 
+  it("summarizes GitHub release preflight remediation without leaking secret values", () => {
+    const manifestPath = repoRelativePath(writeMinimalReleaseSet());
+    const mock = installMockReadinessToolchain();
+
+    const result = runServiceReadiness([
+      "--manifest",
+      manifestPath,
+      "--repo",
+      repository,
+      "--skip-updater",
+      "--json"
+    ], mock.env);
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(1);
+    expect(output).not.toContain(fakeSecretValue);
+    expect(output).not.toContain(rootDir);
+
+    const report = JSON.parse(result.stdout) as {
+      status: string;
+      checks: Array<{ id: string; status: string; message: string; action?: string; detail?: string }>;
+    };
+    const githubCheck = report.checks.find((check) => check.id === "github-release-environment");
+
+    expect(report.status).toBe("fail");
+    expect(report.checks.find((check) => check.id === "hosted-ci")).toEqual(expect.objectContaining({
+      status: "pass"
+    }));
+    expect(githubCheck).toEqual(expect.objectContaining({
+      status: "fail",
+      message: "GitHub release environment preflight failed: 1 missing environment(s), 1 missing secret name(s), 1 missing deployment branch policy/policies"
+    }));
+    expect(githubCheck?.action).toContain(`pnpm release:github-setup -- --repo ${repository} --apply`);
+    expect(githubCheck?.action).toContain(`gh secret set APPLE_ID --env internal-release --repo ${repository}`);
+    expect(githubCheck?.action).toContain(`gh secret set TAURI_SIGNING_PRIVATE_KEY --env production --repo ${repository}`);
+    expect(githubCheck?.detail).toContain("missing environments: internal-release");
+    expect(githubCheck?.detail).toContain("missing secrets: production/TAURI_SIGNING_PRIVATE_KEY");
+    expect(githubCheck?.detail).toContain("missing deployment branches: production/release/*");
+  });
+
   it("rejects contradictory options before running checks", () => {
     const result = runServiceReadiness(["--skip-updater", "--verify-downloads"]);
     const output = `${result.stdout}\n${result.stderr}`;
@@ -120,12 +167,131 @@ describe("service readiness script", () => {
   });
 });
 
-function runServiceReadiness(args: string[]) {
+function runServiceReadiness(args: string[], env: NodeJS.ProcessEnv = process.env) {
   return spawnTsx(["scripts/service-readiness.ts", ...args], {
     cwd: rootDir,
     encoding: "utf8",
-    shell: process.platform === "win32"
+    shell: process.platform === "win32",
+    env
   });
+}
+
+function installMockReadinessToolchain(): { env: NodeJS.ProcessEnv } {
+  const root = mkdtempSync(path.join(tmpdir(), "builder-service-readiness-"));
+  tempRoots.push(root);
+  const binDir = path.join(root, "bin");
+  mkdirSync(binDir, { recursive: true });
+
+  const preflightReport = {
+    repository,
+    environments: [
+      {
+        environment: "internal-release",
+        exists: false,
+        requiredSecrets: ["APPLE_ID"],
+        requiredDeploymentBranches: ["main", "release/*"],
+        missingDeploymentBranches: [],
+        missingSecrets: [],
+        remediation: {
+          setupCommand: `pnpm release:github-setup -- --repo ${repository} --apply`,
+          secretCommands: [`gh secret set APPLE_ID --env internal-release --repo ${repository}`],
+          branchPolicyCommands: [
+            `gh api --method POST repos/${repository}/environments/internal-release/deployment-branch-policies --field name=main --field type=branch`,
+            `gh api --method POST repos/${repository}/environments/internal-release/deployment-branch-policies --field name=release/* --field type=branch`
+          ]
+        }
+      },
+      {
+        environment: "production",
+        exists: true,
+        requiredSecrets: ["TAURI_SIGNING_PRIVATE_KEY"],
+        deploymentBranchPolicy: {
+          protectedBranches: false,
+          customBranchPolicies: true
+        },
+        requiredDeploymentBranches: ["main", "release/*"],
+        missingDeploymentBranches: ["release/*"],
+        missingSecrets: ["TAURI_SIGNING_PRIVATE_KEY"],
+        remediation: {
+          setupCommand: `pnpm release:github-setup -- --repo ${repository} --apply`,
+          secretCommands: [`gh secret set TAURI_SIGNING_PRIVATE_KEY --env production --repo ${repository}`],
+          branchPolicyCommands: [
+            `gh api --method POST repos/${repository}/environments/production/deployment-branch-policies --field name=release/* --field type=branch`
+          ]
+        }
+      }
+    ]
+  };
+
+  writeNodeTool(binDir, "git", `
+const args = process.argv.slice(2);
+if (args[0] === "rev-parse" && args[1] === "HEAD") {
+  process.stdout.write("0123456789abcdef0123456789abcdef01234567\\n");
+  process.exit(0);
+}
+if (args[0] === "status") {
+  process.stdout.write("");
+  process.exit(0);
+}
+process.stderr.write("unsupported git args: " + args.join(" ") + "\\n");
+process.exit(2);
+`);
+  writeNodeTool(binDir, "gh", `
+const args = process.argv.slice(2);
+if (args[0] === "run" && args[1] === "list") {
+  const commit = args[args.indexOf("--commit") + 1];
+  process.stdout.write(JSON.stringify([{ databaseId: 101, status: "completed", conclusion: "success", headSha: commit, url: "https://example.test/ci/101" }]));
+  process.exit(0);
+}
+process.stderr.write("unsupported gh args: " + args.join(" ") + "\\n");
+process.exit(2);
+`);
+  writeNodeTool(binDir, "pnpm", `
+const args = process.argv.slice(2);
+if (args[0] === "release:verify") {
+  process.stdout.write("release manifest verified\\n");
+  process.exit(0);
+}
+if (args[0] === "release:github-preflight") {
+  process.stdout.write("> builder-gear@0.1.0 release:github-preflight /repo\\n");
+  process.stdout.write("> tsx scripts/github-release-preflight.ts -- --repo build-gear/Builder --json\\n\\n");
+  process.stdout.write(process.env.BUILDER_GEAR_PREFLIGHT_REPORT || "{}");
+  process.stderr.write("github release preflight: GitHub release environment is missing: internal-release\\n");
+  process.stderr.write("github release preflight: GitHub release environment production is missing secret: TAURI_SIGNING_PRIVATE_KEY\\n");
+  process.stderr.write("github release preflight: GitHub release environment production is missing deployment branch policy: release/*\\n");
+  process.exit(1);
+}
+process.stderr.write("unsupported pnpm args: " + args.join(" ") + "\\n");
+process.exit(2);
+`);
+
+  const inheritedPath = process.env.PATH ?? process.env.Path ?? "";
+  const mockPath = `${binDir}${path.delimiter}${inheritedPath}`;
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    PATH: mockPath,
+    BUILDER_GEAR_FAKE_SECRET_VALUE: fakeSecretValue,
+    BUILDER_GEAR_PREFLIGHT_REPORT: JSON.stringify(preflightReport)
+  };
+  if (process.platform === "win32") {
+    env.Path = mockPath;
+  }
+
+  return { env };
+}
+
+function writeNodeTool(binDir: string, name: string, source: string): void {
+  const scriptPath = path.join(binDir, `${name}.cjs`);
+  writeFileSync(scriptPath, source);
+
+  if (process.platform === "win32") {
+    writeFileSync(path.join(binDir, `${name}.cmd`), `@echo off\r\nnode "%~dp0\\${name}.cjs" %*\r\n`);
+    return;
+  }
+
+  const toolPath = path.join(binDir, name);
+  writeFileSync(toolPath, `#!/usr/bin/env node\nrequire(${JSON.stringify(scriptPath)});\n`);
+  chmodSync(toolPath, 0o755);
 }
 
 function writeMinimalReleaseSet(options: { artifactRootRelativeEvidence?: boolean } = {}): string {

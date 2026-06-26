@@ -406,13 +406,90 @@ function verifyGitHubReleaseEnvironment(args: ParsedArgs): ReadinessCheck {
     };
   }
 
+  const failure = summarizeGitHubReleasePreflightFailure(args.repo, result);
   return {
     id: "github-release-environment",
     title: "GitHub Release Environment",
     status: "fail",
+    message: failure.message,
+    action: failure.action,
+    detail: failure.detail
+  };
+}
+
+function summarizeGitHubReleasePreflightFailure(
+  repo: string,
+  result: { stdout?: string | null; stderr?: string | null; error?: Error | undefined }
+): { message: string; action: string; detail: string } {
+  const fallback = {
     message: "GitHub release environment preflight failed",
-    action: `Use a GitHub token with repository admin access to run pnpm release:github-setup -- --repo ${args.repo} --apply, set required secret values by name, then rerun pnpm release:github-preflight -- --repo ${args.repo}.`,
+    action: `Use a GitHub token with repository admin access to run pnpm release:github-setup -- --repo ${repo} --apply, set required secret values by name, then rerun pnpm release:github-preflight -- --repo ${repo}.`,
     detail: safeCommandOutput(result)
+  };
+  const report = parseGitHubReleasePreflightReport(result.stdout ?? "");
+  if (!report) {
+    return fallback;
+  }
+
+  const environments = report.environments ?? [];
+  const missingEnvironments = environments
+    .filter((environment) => environment.exists === false)
+    .map((environment) => environment.environment)
+    .filter(isNonEmptyString);
+  const missingSecrets = environments.flatMap((environment) => (
+    (environment.missingSecrets ?? []).map((secretName) => `${environment.environment ?? "unknown"}/${secretName}`)
+  ));
+  const missingBranches = environments.flatMap((environment) => (
+    (environment.missingDeploymentBranches ?? []).map((branchPattern) => `${environment.environment ?? "unknown"}/${branchPattern}`)
+  ));
+  const invalidPolicyEnvironments = environments
+    .filter((environment) => (
+      environment.exists === true &&
+      (
+        environment.deploymentBranchPolicy?.customBranchPolicies !== true ||
+        environment.deploymentBranchPolicy?.protectedBranches !== false
+      )
+    ))
+    .map((environment) => environment.environment)
+    .filter(isNonEmptyString);
+
+  const issueParts = [
+    missingEnvironments.length ? `${missingEnvironments.length} missing environment(s)` : "",
+    missingSecrets.length ? `${missingSecrets.length} missing secret name(s)` : "",
+    invalidPolicyEnvironments.length ? `${invalidPolicyEnvironments.length} environment(s) with invalid branch policy mode` : "",
+    missingBranches.length ? `${missingBranches.length} missing deployment branch policy/policies` : ""
+  ].filter(Boolean);
+  const setupCommands = uniqueStrings(environments
+    .map((environment) => environment.remediation?.setupCommand)
+    .filter(isNonEmptyString));
+  const secretCommands = uniqueStrings(environments.flatMap((environment) => environment.remediation?.secretCommands ?? []));
+  const branchPolicyCommands = uniqueStrings(environments.flatMap((environment) => environment.remediation?.branchPolicyCommands ?? []));
+  const setupCommand = setupCommands[0] ?? `pnpm release:github-setup -- --repo ${repo} --apply`;
+  const actions = [
+    (missingEnvironments.length || invalidPolicyEnvironments.length || missingBranches.length)
+      ? `Run ${setupCommand} with repository admin rights to create/update environments and deployment branch policies.`
+      : "",
+    secretCommands.length
+      ? `Set required secret values by name, for example: ${previewList(secretCommands, 3)}.`
+      : "",
+    branchPolicyCommands.length && !missingEnvironments.length
+      ? `If branch policies still differ after setup, apply: ${previewList(branchPolicyCommands, 2)}.`
+      : "",
+    `Rerun pnpm release:github-preflight -- --repo ${repo}.`
+  ].filter(Boolean);
+  const detailParts = [
+    missingEnvironments.length ? `missing environments: ${missingEnvironments.join(", ")}` : "",
+    missingSecrets.length ? `missing secrets: ${previewList(missingSecrets, 8)}` : "",
+    invalidPolicyEnvironments.length ? `invalid branch policy mode: ${invalidPolicyEnvironments.join(", ")}` : "",
+    missingBranches.length ? `missing deployment branches: ${previewList(missingBranches, 8)}` : ""
+  ].filter(Boolean);
+
+  return {
+    message: issueParts.length
+      ? `GitHub release environment preflight failed: ${issueParts.join(", ")}`
+      : fallback.message,
+    action: actions.join(" "),
+    detail: detailParts.length ? detailParts.join("; ") : fallback.detail
   };
 }
 
@@ -591,6 +668,26 @@ interface GitHubRunListEntry {
   url?: string;
 }
 
+interface GitHubReleasePreflightReport {
+  environments?: GitHubReleasePreflightEnvironment[];
+}
+
+interface GitHubReleasePreflightEnvironment {
+  environment?: string;
+  exists?: boolean;
+  missingSecrets?: string[];
+  missingDeploymentBranches?: string[];
+  deploymentBranchPolicy?: {
+    protectedBranches?: boolean;
+    customBranchPolicies?: boolean;
+  };
+  remediation?: {
+    setupCommand?: string;
+    secretCommands?: string[];
+    branchPolicyCommands?: string[];
+  };
+}
+
 function parseGitHubRunList(text: string): GitHubRunListEntry[] {
   const parsed = JSON.parse(text) as unknown;
   if (!Array.isArray(parsed)) {
@@ -611,6 +708,127 @@ function parseGitHubRunList(text: string): GitHubRunListEntry[] {
       url: typeof record.url === "string" ? record.url : undefined
     };
   });
+}
+
+function parseGitHubReleasePreflightReport(text: string): GitHubReleasePreflightReport | undefined {
+  const jsonText = extractFirstJsonObject(text);
+  if (!jsonText) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(jsonText) as unknown;
+    if (!parsed || typeof parsed !== "object") {
+      return undefined;
+    }
+    const record = parsed as Record<string, unknown>;
+    if (!Array.isArray(record.environments)) {
+      return undefined;
+    }
+
+    return {
+      environments: record.environments
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
+        .map((entry) => ({
+          environment: typeof entry.environment === "string" ? entry.environment : undefined,
+          exists: typeof entry.exists === "boolean" ? entry.exists : undefined,
+          missingSecrets: stringArray(entry.missingSecrets),
+          missingDeploymentBranches: stringArray(entry.missingDeploymentBranches),
+          deploymentBranchPolicy: parseDeploymentBranchPolicy(entry.deploymentBranchPolicy),
+          remediation: parseGitHubReleaseRemediation(entry.remediation)
+        }))
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function extractFirstJsonObject(text: string): string | undefined {
+  const start = text.indexOf("{");
+  if (start < 0) {
+    return undefined;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(start, index + 1);
+      }
+      if (depth < 0) {
+        return undefined;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function parseDeploymentBranchPolicy(value: unknown): GitHubReleasePreflightEnvironment["deploymentBranchPolicy"] {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    protectedBranches: typeof record.protectedBranches === "boolean" ? record.protectedBranches : undefined,
+    customBranchPolicies: typeof record.customBranchPolicies === "boolean" ? record.customBranchPolicies : undefined
+  };
+}
+
+function parseGitHubReleaseRemediation(value: unknown): GitHubReleasePreflightEnvironment["remediation"] {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    setupCommand: typeof record.setupCommand === "string" ? record.setupCommand : undefined,
+    secretCommands: stringArray(record.secretCommands),
+    branchPolicyCommands: stringArray(record.branchPolicyCommands)
+  };
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter(isNonEmptyString)
+    : [];
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
+function previewList(values: string[], limit: number): string {
+  const preview = values.slice(0, limit).join("; ");
+  return values.length > limit ? `${preview}; ... (${values.length} total)` : preview;
 }
 
 function aggregateStatus(checks: ReadinessCheck[]): ReadinessStatus {

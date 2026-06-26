@@ -47,7 +47,22 @@ function main(): void {
           : [],
         missingSecrets: exists
           ? requirement.requiredSecrets.filter((secretName) => !present.has(secretName))
-          : []
+          : [],
+        remediation: {
+          setupCommand: `pnpm release:github-setup -- --repo ${repo} --apply`,
+          secretCommands: (exists
+            ? requirement.requiredSecrets.filter((secretName) => !present.has(secretName))
+            : requirement.requiredSecrets
+          ).map((secretName) => (
+            `gh secret set ${secretName} --env ${requirement.environment} --repo ${repo}`
+          )),
+          branchPolicyCommands: (exists
+            ? requirement.deploymentBranches.filter((branchPattern) => !deploymentBranches.has(branchPattern))
+            : requirement.deploymentBranches
+          ).map((branchPattern) => (
+            `gh api --method POST repos/${repo}/environments/${encodeURIComponent(requirement.environment)}/deployment-branch-policies --field name=${branchPattern} --field type=branch`
+          ))
+        }
       };
     });
 
