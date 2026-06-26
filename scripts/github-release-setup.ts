@@ -3,7 +3,8 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  releaseCandidateGitHubEnvironmentRequirements
+  releaseCandidateGitHubEnvironmentRequirements,
+  type GitHubReleaseEnvironmentRequirement
 } from "../packages/core/src/release-check.js";
 import {
   readRepoJsonFile,
@@ -12,6 +13,19 @@ import {
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const usage = "Usage: pnpm release:github-setup -- [--repo owner/name] [--apply] [--json]";
+
+interface GitHubSetupEnvironmentReport {
+  environment: string;
+  existsBefore: boolean;
+  created: boolean;
+  configured: boolean;
+  requiredSecrets: string[];
+  deploymentBranches: string[];
+  secretCommands: string[];
+  branchPolicyCommands: string[];
+  branchPoliciesCreated: string[];
+  error?: string;
+}
 
 main();
 
@@ -27,32 +41,8 @@ function main(): void {
     const policy = readRepoJsonFile<Record<string, unknown>>(rootDir, "release/distribution-policy.json", "distribution policy");
     const repo = parsed.repo ?? resolveGitHubRepository();
     const requirements = releaseCandidateGitHubEnvironmentRequirements(policy);
-    const report = requirements.map((requirement) => {
-      const existsBefore = githubEnvironmentExists(repo, requirement.environment);
-      const configured = parsed.apply
-        ? configureGitHubEnvironment(repo, requirement.environment)
-        : false;
-      const created = parsed.apply && !existsBefore && configured;
-      const branchPoliciesCreated = parsed.apply
-        ? ensureDeploymentBranchPolicies(repo, requirement.environment, requirement.deploymentBranches)
-        : [];
-
-      return {
-        environment: requirement.environment,
-        existsBefore,
-        created,
-        configured,
-        requiredSecrets: requirement.requiredSecrets,
-        deploymentBranches: requirement.deploymentBranches,
-        secretCommands: requirement.requiredSecrets.map((secretName) => (
-          `gh secret set ${secretName} --env ${requirement.environment} --repo ${repo}`
-        )),
-        branchPolicyCommands: requirement.deploymentBranches.map((branchPattern) => (
-          `gh api --method POST repos/${repo}/environments/${encodeURIComponent(requirement.environment)}/deployment-branch-policies --field name=${branchPattern} --field type=branch`
-        )),
-        branchPoliciesCreated
-      };
-    });
+    const report = requirements.map((requirement) => setupGitHubEnvironment(repo, requirement, parsed.apply));
+    const hasErrors = report.some((environment) => environment.error);
 
     if (parsed.json) {
       console.log(JSON.stringify({
@@ -60,12 +50,15 @@ function main(): void {
         applied: parsed.apply,
         environments: report
       }, null, 2));
+      process.exitCode = hasErrors ? 1 : 0;
       return;
     }
 
     console.log(`GitHub release setup ${parsed.apply ? "applied" : "dry run"} for ${repo}.`);
     for (const environment of report) {
-      const action = environment.created
+      const action = environment.error
+        ? "failed"
+        : environment.created
         ? "created"
         : environment.existsBefore
           ? "exists"
@@ -78,6 +71,13 @@ function main(): void {
       }
       console.log(`  set values with: ${environment.secretCommands[0]} ...`);
       console.log(`  branch policy setup: ${environment.branchPolicyCommands[0]} ...`);
+      if (environment.error) {
+        console.log(`  error: ${environment.error}`);
+      }
+    }
+
+    if (hasErrors) {
+      process.exitCode = 1;
     }
   } catch (error) {
     console.error(`github release setup: ${safeErrorMessage(error)}`);
@@ -143,6 +143,54 @@ function parseArgs(argv: string[]): { ok: true; repo?: string; apply: boolean; j
   }
 
   return { ok: true, repo, apply, json };
+}
+
+function setupGitHubEnvironment(
+  repo: string,
+  requirement: GitHubReleaseEnvironmentRequirement,
+  apply: boolean
+): GitHubSetupEnvironmentReport {
+  const base = {
+    environment: requirement.environment,
+    requiredSecrets: requirement.requiredSecrets,
+    deploymentBranches: requirement.deploymentBranches,
+    secretCommands: requirement.requiredSecrets.map((secretName) => (
+      `gh secret set ${secretName} --env ${requirement.environment} --repo ${repo}`
+    )),
+    branchPolicyCommands: requirement.deploymentBranches.map((branchPattern) => (
+      `gh api --method POST repos/${repo}/environments/${encodeURIComponent(requirement.environment)}/deployment-branch-policies --field name=${branchPattern} --field type=branch`
+    ))
+  };
+
+  let existsBefore = false;
+
+  try {
+    existsBefore = githubEnvironmentExists(repo, requirement.environment);
+    const configured = apply
+      ? configureGitHubEnvironment(repo, requirement.environment)
+      : false;
+    const created = apply && !existsBefore && configured;
+    const branchPoliciesCreated = apply && configured
+      ? ensureDeploymentBranchPolicies(repo, requirement.environment, requirement.deploymentBranches)
+      : [];
+
+    return {
+      ...base,
+      existsBefore,
+      created,
+      configured,
+      branchPoliciesCreated
+    };
+  } catch (error) {
+    return {
+      ...base,
+      existsBefore,
+      created: false,
+      configured: false,
+      branchPoliciesCreated: [],
+      error: safeErrorMessage(error)
+    };
+  }
 }
 
 function resolveGitHubRepository(): string {

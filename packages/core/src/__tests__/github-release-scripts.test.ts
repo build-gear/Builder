@@ -135,6 +135,56 @@ describe("GitHub release setup and preflight scripts", () => {
     expect(postCalls).toHaveLength(4);
   });
 
+  it("reports apply permission failures as structured JSON without hiding later environments", () => {
+    const mock = installMockGh({
+      existingEnvironments: [],
+      secretInventory: completeSecretInventory(),
+      forbidEnvironmentMutation: true
+    });
+
+    const result = runGitHubSetup(["--repo", repository, "--apply", "--json"], mock);
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(1);
+    expect(output).not.toContain(fakeSecretValue);
+
+    const report = JSON.parse(result.stdout) as {
+      applied: boolean;
+      environments: Array<{
+        environment: string;
+        existsBefore: boolean;
+        created: boolean;
+        configured: boolean;
+        branchPoliciesCreated: string[];
+        error?: string;
+      }>;
+    };
+
+    expect(report.applied).toBe(true);
+    expect(report.environments).toHaveLength(2);
+    expect(report.environments.map((environment) => ({
+      environment: environment.environment,
+      existsBefore: environment.existsBefore,
+      created: environment.created,
+      configured: environment.configured,
+      branchPoliciesCreated: environment.branchPoliciesCreated,
+      hasAdminError: environment.error?.includes("Must have admin rights to Repository")
+    }))).toEqual(
+      releaseRequirements().map((requirement) => ({
+        environment: requirement.environment,
+        existsBefore: false,
+        created: false,
+        configured: false,
+        branchPoliciesCreated: [],
+        hasAdminError: true
+      }))
+    );
+
+    const putCalls = readMockGhLog(mock).filter((entry) => entry.args.includes("PUT"));
+    expect(putCalls).toHaveLength(2);
+    expect(readMockGhLog(mock).filter((entry) => entry.args.includes("POST"))).toEqual([]);
+  });
+
   it("passes preflight when every required environment secret name exists", () => {
     const mock = installMockGh({
       existingEnvironments: ["internal-release", "production"],
@@ -284,6 +334,7 @@ interface MockGhOptions {
   repoView?: string;
   secretInventory: Record<string, string[]>;
   deploymentBranchPolicies?: Record<string, string[]>;
+  forbidEnvironmentMutation?: boolean;
 }
 
 interface MockGh {
@@ -379,6 +430,10 @@ if (args[0] === "api") {
   const environment = parts.environment;
 
   if (args.includes("PUT")) {
+    if (state.forbidEnvironmentMutation) {
+      process.stderr.write('gh: Must have admin rights to Repository. (HTTP 403) {"message":"Must have admin rights to Repository.","status":"403"}\\n');
+      process.exit(1);
+    }
     const input = JSON.parse(stdin || "{}");
     state.existingEnvironments = Array.from(new Set([...(state.existingEnvironments || []), environment]));
     state.deploymentBranchPolicyConfig = {
