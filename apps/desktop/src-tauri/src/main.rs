@@ -145,6 +145,7 @@ static SCHEDULE_STATE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static RUNTIME_STARTED_AT: OnceLock<chrono::DateTime<chrono::Utc>> = OnceLock::new();
 static RUN_ID_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static DIAGNOSTICS_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static ATOMIC_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -2780,16 +2781,8 @@ fn workspace_schedules_path(workspace: &Path) -> PathBuf {
     workspace.join(".builder").join("schedules.json")
 }
 
-fn workspace_schedules_temp_path(path: &Path) -> PathBuf {
-    path.with_file_name("schedules.json.tmp")
-}
-
 fn workspace_ontology_path(workspace: &Path) -> PathBuf {
     workspace.join("ontology").join("builder-gear.json")
-}
-
-fn workspace_ontology_temp_path(path: &Path) -> PathBuf {
-    path.with_file_name("builder-gear.json.tmp")
 }
 
 fn skill_dir(workspace: &Path, skill_id: &str) -> PathBuf {
@@ -3237,8 +3230,24 @@ fn write_text_atomic(path: &Path, body: &str) -> Result<(), String> {
 }
 
 fn write_text_atomic_existing_parent(path: &Path, body: &str) -> Result<(), String> {
-    let temp_path = path.with_extension("tmp");
-    write_text_atomic_with_temp(path, &temp_path, body)
+    let mut last_collision: Option<PathBuf> = None;
+
+    for _ in 0..32 {
+        let temp_path = unique_atomic_temp_path(path);
+        match write_text_atomic_with_reserved_temp(path, &temp_path, body) {
+            Ok(()) => return Ok(()),
+            Err(AtomicWriteError::TempExists(path)) => last_collision = Some(path),
+            Err(AtomicWriteError::Other(error)) => return Err(error),
+        }
+    }
+
+    Err(match last_collision {
+        Some(path) => format!(
+            "failed to reserve unique temporary file after repeated collisions: {}",
+            path.display()
+        ),
+        None => "failed to reserve unique temporary file".to_string(),
+    })
 }
 
 fn write_text_atomic_with_temp(path: &Path, temp_path: &Path, body: &str) -> Result<(), String> {
@@ -3248,27 +3257,94 @@ fn write_text_atomic_with_temp(path: &Path, temp_path: &Path, body: &str) -> Res
 
     reject_symlinked_existing_path(path, "target file")?;
     prepare_atomic_temp_path(temp_path)?;
+    write_text_atomic_with_reserved_temp(path, temp_path, body)
+        .map_err(AtomicWriteError::into_message)
+}
 
+enum AtomicWriteError {
+    TempExists(PathBuf),
+    Other(String),
+}
+
+impl AtomicWriteError {
+    fn into_message(self) -> String {
+        match self {
+            Self::TempExists(path) => format!("temporary file already exists: {}", path.display()),
+            Self::Other(error) => error,
+        }
+    }
+}
+
+fn write_text_atomic_with_reserved_temp(
+    path: &Path,
+    temp_path: &Path,
+    body: &str,
+) -> Result<(), AtomicWriteError> {
+    if path == temp_path {
+        return Err(AtomicWriteError::Other(
+            "temporary file path must differ from target path".to_string(),
+        ));
+    }
+
+    reject_symlinked_existing_path(path, "target file").map_err(AtomicWriteError::Other)?;
     let mut temp_file = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(temp_path)
-        .map_err(|error| format!("failed to create temporary file: {error}"))?;
-    temp_file
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                AtomicWriteError::TempExists(temp_path.to_path_buf())
+            } else {
+                AtomicWriteError::Other(format!("failed to create temporary file: {error}"))
+            }
+        })?;
+
+    let write_result = temp_file
         .write_all(body.as_bytes())
-        .map_err(|error| format!("failed to write file: {error}"))?;
-    temp_file
-        .sync_all()
-        .map_err(|error| format!("failed to flush file: {error}"))?;
+        .map_err(|error| format!("failed to write file: {error}"))
+        .and_then(|_| {
+            temp_file
+                .sync_all()
+                .map_err(|error| format!("failed to flush file: {error}"))
+        });
+
+    if let Err(error) = write_result {
+        drop(temp_file);
+        let _ = fs::remove_file(temp_path);
+        return Err(AtomicWriteError::Other(error));
+    }
+
     drop(temp_file);
 
     match fs::rename(temp_path, path) {
         Ok(()) => Ok(()),
         Err(rename_error) if path.exists() => {
             replace_existing_file_with_backup(path, temp_path, "file", rename_error)
+                .map_err(AtomicWriteError::Other)
         }
-        Err(error) => Err(format!("failed to persist file: {error}")),
+        Err(error) => Err(AtomicWriteError::Other(format!(
+            "failed to persist file: {error}"
+        ))),
     }
+}
+
+fn unique_atomic_temp_path(path: &Path) -> PathBuf {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or("builder-gear-file");
+    let process_id = std::process::id();
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let sequence = ATOMIC_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+
+    parent.join(format!(
+        ".{file_name}.builder-gear-{process_id}-{nonce}-{sequence}.tmp"
+    ))
 }
 
 fn reject_symlinked_existing_path(path: &Path, label: &str) -> Result<(), String> {
@@ -4186,11 +4262,10 @@ fn write_workspace_ontology(workspace: &Path, ontology: &[OntologyEntity]) -> Re
     ensure_workspace_child_dir_for_write(workspace, "ontology", "ontology")?;
     snapshot_existing_file_for_backup(workspace, &path, "ontology-save")?;
 
-    let temp_path = workspace_ontology_temp_path(&path);
     let body = serde_json::to_string_pretty(&sorted_entities)
         .map_err(|error| format!("failed to serialize ontology: {error}"))?;
     ensure_text_body_within_limit("ontology file", &body, MAX_REGULAR_TEXT_FILE_BYTES)?;
-    write_text_atomic_with_temp(&path, &temp_path, &format!("{body}\n"))
+    write_text_atomic_existing_parent(&path, &format!("{body}\n"))
         .map_err(|error| format!("failed to persist ontology: {error}"))
 }
 
@@ -4210,11 +4285,10 @@ fn write_workspace_schedules(workspace: &Path, schedules: &[ScheduleSpec]) -> Re
     ensure_workspace_child_dir_for_write(workspace, ".builder", "builder")?;
     snapshot_existing_file_for_backup(workspace, &path, "schedules-save")?;
 
-    let temp_path = workspace_schedules_temp_path(&path);
     let body = serde_json::to_string_pretty(&sorted_schedules)
         .map_err(|error| format!("failed to serialize schedules: {error}"))?;
     ensure_text_body_within_limit("schedules file", &body, MAX_REGULAR_TEXT_FILE_BYTES)?;
-    write_text_atomic_with_temp(&path, &temp_path, &format!("{body}\n"))
+    write_text_atomic_existing_parent(&path, &format!("{body}\n"))
         .map_err(|error| format!("failed to persist schedules: {error}"))
 }
 
@@ -5658,6 +5732,24 @@ mod tests {
 
     fn oversized_text_body() -> String {
         "x".repeat(MAX_REGULAR_TEXT_FILE_BYTES as usize + 1)
+    }
+
+    fn assert_no_builder_gear_temp_files(directory: &Path) {
+        if !directory.exists() {
+            return;
+        }
+
+        let temp_files = fs::read_dir(directory)
+            .expect("directory should be readable")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .filter(|name| name.contains(".builder-gear-") && name.ends_with(".tmp"))
+            .collect::<Vec<_>>();
+
+        assert!(
+            temp_files.is_empty(),
+            "unexpected temp files: {temp_files:?}"
+        );
     }
 
     #[test]
@@ -7458,7 +7550,7 @@ requiredTools:
 
         assert_eq!(schedules[0].id, "alpha");
         assert_eq!(schedules[1].id, "daily-plan");
-        assert!(!workspace_schedules_temp_path(&workspace_schedules_path(&workspace)).exists());
+        assert_no_builder_gear_temp_files(&workspace.join(".builder"));
 
         let _ = fs::remove_dir_all(workspace);
     }
@@ -7517,7 +7609,38 @@ requiredTools:
 
         assert_eq!(entities[0].id, "a-goal");
         assert_eq!(entities[1].id, "z-goal");
-        assert!(!workspace_ontology_temp_path(&workspace_ontology_path(&workspace)).exists());
+        assert_no_builder_gear_temp_files(&workspace.join("ontology"));
+
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn workspace_writes_preserve_existing_neighbor_temp_files() {
+        let workspace = test_workspace();
+        fs::create_dir_all(workspace.join(".builder")).expect("builder directory should exist");
+        fs::create_dir_all(workspace.join("ontology")).expect("ontology directory should exist");
+        let schedules_temp = workspace.join(".builder").join("schedules.json.tmp");
+        let ontology_temp = workspace.join("ontology").join("builder-gear.json.tmp");
+        fs::write(&schedules_temp, "user schedules temp")
+            .expect("existing schedules temp should be written");
+        fs::write(&ontology_temp, "user ontology temp")
+            .expect("existing ontology temp should be written");
+
+        write_workspace_schedules(&workspace, &[interval_schedule("skip")])
+            .expect("schedules should persist");
+        write_workspace_ontology(&workspace, &[ontology_entity("goal", "Goal")])
+            .expect("ontology should persist");
+
+        assert_eq!(
+            fs::read_to_string(&schedules_temp).expect("schedules temp should be preserved"),
+            "user schedules temp"
+        );
+        assert_eq!(
+            fs::read_to_string(&ontology_temp).expect("ontology temp should be preserved"),
+            "user ontology temp"
+        );
+        assert_no_builder_gear_temp_files(&workspace.join(".builder"));
+        assert_no_builder_gear_temp_files(&workspace.join("ontology"));
 
         let _ = fs::remove_dir_all(workspace);
     }
@@ -7598,6 +7721,29 @@ requiredTools:
 
         let _ = fs::remove_dir_all(workspace);
         let _ = fs::remove_dir_all(outside);
+    }
+
+    #[test]
+    fn atomic_write_preserves_existing_neighbor_tmp_file() {
+        let workspace = test_workspace();
+        fs::create_dir_all(&workspace).expect("workspace should be created");
+        let target = workspace.join("settings.json");
+        let old_fixed_temp = workspace.join("settings.tmp");
+        fs::write(&old_fixed_temp, "user temp").expect("neighbor temp should be written");
+
+        write_text_atomic(&target, "replacement").expect("atomic write should succeed");
+
+        assert_eq!(
+            fs::read_to_string(&target).expect("target should be readable"),
+            "replacement"
+        );
+        assert_eq!(
+            fs::read_to_string(&old_fixed_temp).expect("neighbor temp should be preserved"),
+            "user temp"
+        );
+        assert_no_builder_gear_temp_files(&workspace);
+
+        let _ = fs::remove_dir_all(workspace);
     }
 
     #[cfg(unix)]
