@@ -1572,7 +1572,8 @@ describe("release readiness checks", () => {
           "jobs:",
           "  test:",
           "    steps:",
-          "      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2",
+          "      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6",
+          "      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0",
           "      - uses: ./local-action",
           "      - uses: docker://example/image@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         ].join("\n")
@@ -1596,6 +1597,22 @@ describe("release readiness checks", () => {
       "workflow action must include a ref at .github/workflows/pinned.yml:5: actions/setup-node",
       "workflow Docker action must be pinned by sha256 digest at .github/workflows/pinned.yml:6: docker://example/image:latest"
     ]));
+
+    expect(validateWorkflowActionRefs([
+      {
+        path: ".github/workflows/pinned.yml",
+        content: [
+          "jobs:",
+          "  test:",
+          "    steps:",
+          "      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2",
+          "      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0"
+        ].join("\n")
+      }
+    ])).toEqual(expect.arrayContaining([
+      "workflow action must use a Node 24-compatible actions/checkout@v5 or newer pin at .github/workflows/pinned.yml:4: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+      "workflow action must use a Node 24-compatible actions/setup-node@v5 or newer pin at .github/workflows/pinned.yml:5: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+    ]));
   });
 
   it("requires CI to run the release readiness gate across supported desktop platforms", () => {
@@ -1618,7 +1635,7 @@ describe("release readiness checks", () => {
       "          - windows-2022",
       "          - ubuntu-22.04",
       "    steps:",
-      "      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+      "      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6",
       "        with:",
       "          persist-credentials: false",
       "      - run: pnpm install --frozen-lockfile",
@@ -1743,7 +1760,7 @@ describe("release readiness checks", () => {
       "          - platform: linux",
       "            os: ubuntu-22.04",
       "    steps:",
-      "      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+      "      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6",
       "        with:",
       "          persist-credentials: false",
       "      - name: Validate release environment secrets",
@@ -2152,7 +2169,7 @@ describe("release readiness checks", () => {
       "          printf 'head_sha=%s\\n' \"$head_sha\" >> \"$GITHUB_OUTPUT\"",
       "          printf 'RELEASE_CANDIDATE_HEAD_SHA=%s\\n' \"$head_sha\" >> \"$GITHUB_ENV\"",
       "      - name: Checkout selected release source",
-      "        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+      "        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6",
       "        with:",
       "          ref: ${{ steps.release-run-metadata.outputs.head_sha }}",
       "          persist-credentials: false",

@@ -3233,10 +3233,39 @@ export function validateWorkflowActionRefs(workflows: WorkflowFile[]): string[] 
       if (!/^[a-f0-9]{40}$/i.test(ref)) {
         errors.push(`workflow action must be pinned to a 40-character commit SHA at ${location}: ${specifier}`);
       }
+
+      const nodeRuntimeError = validateWorkflowActionNodeRuntime(specifier, line, location);
+      if (nodeRuntimeError) {
+        errors.push(nodeRuntimeError);
+      }
     }
   }
 
   return errors;
+}
+
+function validateWorkflowActionNodeRuntime(specifier: string, line: string, location: string): string | undefined {
+  const actionName = specifier.slice(0, specifier.lastIndexOf("@")).toLowerCase();
+  const minimumMajorByAction: Record<string, number> = {
+    "actions/checkout": 5,
+    "actions/setup-node": 5
+  };
+  const minimumMajor = minimumMajorByAction[actionName];
+  if (!minimumMajor) {
+    return undefined;
+  }
+
+  const versionComment = line.match(/#\s*v(\d+)(?:\.\d+){0,2}\b/i);
+  if (!versionComment) {
+    return `workflow action must document a Node 24-compatible major version comment at ${location}: ${specifier}`;
+  }
+
+  const major = Number(versionComment[1]);
+  if (!Number.isInteger(major) || major < minimumMajor) {
+    return `workflow action must use a Node 24-compatible ${actionName}@v${minimumMajor} or newer pin at ${location}: ${specifier}`;
+  }
+
+  return undefined;
 }
 
 function validateReleaseReadinessWorkflow(workflow: WorkflowFile): string[] {
