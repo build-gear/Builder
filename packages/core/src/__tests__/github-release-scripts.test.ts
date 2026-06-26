@@ -18,6 +18,8 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.
 const tempRoots: string[] = [];
 const repository = "build-gear/Builder";
 const fakeSecretValue = "super-secret-gh-release-value";
+const fakeGitHubToken = `ghp_${"abcdefghijklmnopqrstuvwxyz123456"}`;
+const fakeOpenAiKey = `sk-${"abcdefghijklmnopqrstuvwxyz123456"}`;
 
 describe("GitHub release setup and preflight scripts", () => {
   afterEach(() => {
@@ -147,6 +149,8 @@ describe("GitHub release setup and preflight scripts", () => {
 
     expect(result.status).toBe(1);
     expect(output).not.toContain(fakeSecretValue);
+    expect(output).not.toContain(fakeGitHubToken);
+    expect(output).not.toContain(fakeOpenAiKey);
 
     const report = JSON.parse(result.stdout) as {
       applied: boolean;
@@ -183,6 +187,24 @@ describe("GitHub release setup and preflight scripts", () => {
     const putCalls = readMockGhLog(mock).filter((entry) => entry.args.includes("PUT"));
     expect(putCalls).toHaveLength(2);
     expect(readMockGhLog(mock).filter((entry) => entry.args.includes("POST"))).toEqual([]);
+  });
+
+  it("redacts secret-shaped GitHub CLI failures during preflight", () => {
+    const mock = installMockGh({
+      existingEnvironments: ["internal-release", "production"],
+      secretInventory: completeSecretInventory(),
+      failSecretListFor: "production"
+    });
+
+    const result = runGitHubPreflight(["--repo", repository, "--json"], mock);
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(1);
+    expect(output).toContain("[REDACTED_TOKEN]");
+    expect(output).toContain("[REDACTED_KEY]");
+    expect(output).not.toContain(fakeSecretValue);
+    expect(output).not.toContain(fakeGitHubToken);
+    expect(output).not.toContain(fakeOpenAiKey);
   });
 
   it("passes preflight when every required environment secret name exists", () => {
@@ -335,6 +357,7 @@ interface MockGhOptions {
   secretInventory: Record<string, string[]>;
   deploymentBranchPolicies?: Record<string, string[]>;
   forbidEnvironmentMutation?: boolean;
+  failSecretListFor?: string;
 }
 
 interface MockGh {
@@ -407,6 +430,8 @@ const args = process.argv.slice(2);
 const logPath = process.env.BUILDER_GEAR_MOCK_GH_LOG;
 const statePath = process.env.BUILDER_GEAR_MOCK_GH_STATE;
 const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+const fakeGhToken = "ghp_" + "abcdefghijklmnop" + "qrstuvwxyz123456";
+const fakeOpenAiKey = "sk-" + "abcdefghijklmnop" + "qrstuvwxyz123456";
 const stdin = args.includes("PUT") ? fs.readFileSync(0, "utf8") : "";
 fs.appendFileSync(logPath, JSON.stringify({ args, stdin }) + "\\n");
 
@@ -431,7 +456,7 @@ if (args[0] === "api") {
 
   if (args.includes("PUT")) {
     if (state.forbidEnvironmentMutation) {
-      process.stderr.write('gh: Must have admin rights to Repository. (HTTP 403) {"message":"Must have admin rights to Repository.","status":"403"}\\n');
+      process.stderr.write('gh: Must have admin rights to Repository with token ' + fakeGhToken + ' and key ' + fakeOpenAiKey + '. (HTTP 403) {"message":"Must have admin rights to Repository.","status":"403"}\\n');
       process.exit(1);
     }
     const input = JSON.parse(stdin || "{}");
@@ -495,6 +520,10 @@ if (args[0] === "secret" && args[1] === "list") {
   const environment = args[args.indexOf("--env") + 1];
   if (!(state.existingEnvironments || []).includes(environment)) {
     process.stderr.write("HTTP 404 Not Found\\n");
+    process.exit(1);
+  }
+  if (state.failSecretListFor === environment) {
+    process.stderr.write("secret list failed with token " + fakeGhToken + ", key " + fakeOpenAiKey + ", value " + process.env.BUILDER_GEAR_FAKE_SECRET_VALUE + "\\n");
     process.exit(1);
   }
 

@@ -8,6 +8,7 @@ import {
 } from "../packages/core/src/release-check.js";
 import {
   readRepoJsonFile,
+  safeExternalCommandOutput,
   safeErrorMessage as safeScriptErrorMessage
 } from "./script-file-safety.js";
 
@@ -332,7 +333,7 @@ function runGh(args: string[], label: string): string {
 }
 
 function safeGhOutput(output: string): string {
-  const trimmed = output.replace(/\s+/g, " ").trim();
+  const trimmed = safeExternalCommandOutput(rootDir, output).replace(/\s+/g, " ").trim();
   return trimmed || "gh command failed";
 }
 

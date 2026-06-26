@@ -227,7 +227,27 @@ export function repoRelativePath(rootDir: string, absolutePath: string): string 
 export function safeErrorMessage(rootDir: string, error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
 
-  return message.replaceAll(path.resolve(rootDir), "[REPO_ROOT]");
+  return safeExternalCommandOutput(rootDir, message);
+}
+
+export function safeExternalCommandOutput(rootDir: string, output: string): string {
+  let redacted = output.replaceAll(path.resolve(rootDir), "[REPO_ROOT]");
+
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!value || value.length < 8) {
+      continue;
+    }
+    if (!/(SECRET|TOKEN|PASSWORD|PRIVATE|CERTIFICATE|KEY|APPLE|TAURI|UPDATER|GH|GITHUB)/i.test(key)) {
+      continue;
+    }
+    redacted = redacted.split(value).join("[REDACTED_ENV_VALUE]");
+  }
+
+  return redacted
+    .replace(/\bsk-[A-Za-z0-9_-]{16,}\b/g, "[REDACTED_KEY]")
+    .replace(/\bgh[pousr]_[A-Za-z0-9_]{16,}\b/g, "[REDACTED_TOKEN]")
+    .replace(/\b(?:Bearer\s+)[A-Za-z0-9._~+/=-]{16,}\b/gi, "Bearer [REDACTED_TOKEN]")
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[REDACTED_PRIVATE_KEY]");
 }
 
 function ensureSafeParentDirectory(rootDir: string, outputPath: string, label: string): void {
