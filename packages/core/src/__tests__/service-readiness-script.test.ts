@@ -282,8 +282,8 @@ function installMockReadinessToolchain(): { env: NodeJS.ProcessEnv } {
           setupCommand: `pnpm release:github-setup -- --repo ${repository} --apply`,
           secretCommands: [`gh secret set APPLE_ID --env internal-release --repo ${repository}`],
           branchPolicyCommands: [
-            `gh api --method POST repos/${repository}/environments/internal-release/deployment-branch-policies --field name=main --field type=branch`,
-            `gh api --method POST repos/${repository}/environments/internal-release/deployment-branch-policies --field name=release/* --field type=branch`
+            expectedBranchPolicyCommand("internal-release", "main"),
+            expectedBranchPolicyCommand("internal-release", "release/*")
           ]
         }
       },
@@ -302,7 +302,7 @@ function installMockReadinessToolchain(): { env: NodeJS.ProcessEnv } {
           setupCommand: `pnpm release:github-setup -- --repo ${repository} --apply`,
           secretCommands: [`gh secret set TAURI_SIGNING_PRIVATE_KEY --env production --repo ${repository}`],
           branchPolicyCommands: [
-            `gh api --method POST repos/${repository}/environments/production/deployment-branch-policies --field name=release/* --field type=branch`
+            expectedBranchPolicyCommand("production", "release/*")
           ]
         }
       }
@@ -540,4 +540,10 @@ function writeJson(filePath: string, value: unknown): void {
 
 function repoRelativePath(absolutePath: string): string {
   return path.relative(rootDir, absolutePath).split(path.sep).join("/");
+}
+
+function expectedBranchPolicyCommand(environment: string, branchPattern: string): string {
+  const fieldArg = branchPattern === "release/*" ? "'name=release/*'" : `name=${branchPattern}`;
+
+  return `gh api --method POST repos/${repository}/environments/${encodeURIComponent(environment)}/deployment-branch-policies --field ${fieldArg} --field type=branch`;
 }

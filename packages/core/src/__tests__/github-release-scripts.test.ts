@@ -66,12 +66,8 @@ describe("GitHub release setup and preflight scripts", () => {
         configured: false,
         requiredSecrets: requirement.requiredSecrets,
         deploymentBranches: requirement.deploymentBranches,
-        secretCommands: requirement.requiredSecrets.map((secretName) => (
-          `gh secret set ${secretName} --env ${requirement.environment} --repo ${repository}`
-        )),
-        branchPolicyCommands: requirement.deploymentBranches.map((branchPattern) => (
-          `gh api --method POST repos/${repository}/environments/${encodeURIComponent(requirement.environment)}/deployment-branch-policies --field name=${branchPattern} --field type=branch`
-        )),
+        secretCommands: requirement.requiredSecrets.map((secretName) => expectedSecretCommand(secretName, requirement.environment)),
+        branchPolicyCommands: requirement.deploymentBranches.map((branchPattern) => expectedBranchPolicyCommand(requirement.environment, branchPattern)),
         branchPoliciesCreated: []
       }))
     );
@@ -270,7 +266,7 @@ describe("GitHub release setup and preflight scripts", () => {
     expect(output).toContain("github release preflight: GitHub release environment internal-release is missing deployment branch policy: release/*");
     expect(output).toContain("github release preflight: GitHub release environment production is missing deployment branch policy: main");
     expect(output).toContain("\"missingDeploymentBranches\": [");
-    expect(output).toContain(`gh api --method POST repos/${repository}/environments/internal-release/deployment-branch-policies --field name=release/* --field type=branch`);
+    expect(output).toContain(expectedBranchPolicyCommand("internal-release", "release/*"));
   });
 
   it("fails preflight with missing secret names only", () => {
@@ -321,12 +317,8 @@ describe("GitHub release setup and preflight scripts", () => {
         missingSecrets: [],
         remediation: {
           setupCommand: `pnpm release:github-setup -- --repo ${repository} --apply`,
-          secretCommands: requirement.requiredSecrets.map((secretName) => (
-            `gh secret set ${secretName} --env ${requirement.environment} --repo ${repository}`
-          )),
-          branchPolicyCommands: requirement.deploymentBranches.map((branchPattern) => (
-            `gh api --method POST repos/${repository}/environments/${encodeURIComponent(requirement.environment)}/deployment-branch-policies --field name=${branchPattern} --field type=branch`
-          ))
+          secretCommands: requirement.requiredSecrets.map((secretName) => expectedSecretCommand(secretName, requirement.environment)),
+          branchPolicyCommands: requirement.deploymentBranches.map((branchPattern) => expectedBranchPolicyCommand(requirement.environment, branchPattern))
         }
       }))
     );
@@ -579,4 +571,14 @@ function completeSecretInventory(): Record<string, string[]> {
 
 function distributionPolicy(): Record<string, unknown> {
   return JSON.parse(readFileSync(path.join(rootDir, "release/distribution-policy.json"), "utf8")) as Record<string, unknown>;
+}
+
+function expectedSecretCommand(secretName: string, environment: string): string {
+  return `gh secret set ${secretName} --env ${environment} --repo ${repository}`;
+}
+
+function expectedBranchPolicyCommand(environment: string, branchPattern: string): string {
+  const fieldArg = branchPattern === "release/*" ? "'name=release/*'" : `name=${branchPattern}`;
+
+  return `gh api --method POST repos/${repository}/environments/${encodeURIComponent(environment)}/deployment-branch-policies --field ${fieldArg} --field type=branch`;
 }

@@ -250,6 +250,14 @@ export function safeExternalCommandOutput(rootDir: string, output: string): stri
     .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[REDACTED_PRIVATE_KEY]");
 }
 
+export function shellQuoteArg(value: string): string {
+  if (/^[A-Za-z0-9_./:=@%+-]+$/.test(value)) {
+    return value;
+  }
+
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 function ensureSafeParentDirectory(rootDir: string, outputPath: string, label: string): void {
   const root = path.resolve(rootDir);
   const parent = path.dirname(outputPath);

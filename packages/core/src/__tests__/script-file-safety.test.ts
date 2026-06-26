@@ -160,6 +160,26 @@ describe("script file safety helpers", () => {
     expect(output).toContain("temporary iconset directory must not be a symlink");
     expect(existsSync(outside)).toBe(true);
   });
+
+  it("quotes generated shell command arguments that would otherwise glob", () => {
+    const result = runHelperScript(`
+      import { shellQuoteArg } from ${JSON.stringify(helperUrl)};
+      console.log([
+        shellQuoteArg("name=main"),
+        shellQuoteArg("name=release/*"),
+        shellQuoteArg("owner/repo"),
+        shellQuoteArg("value'with-quote")
+      ].join("\\n"));
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim().split("\n")).toEqual([
+      "name=main",
+      "'name=release/*'",
+      "owner/repo",
+      "'value'\\''with-quote'"
+    ]);
+  });
 });
 
 function tempRoot(prefix: string): string {

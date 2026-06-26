@@ -9,7 +9,8 @@ import {
 import {
   readRepoJsonFile,
   safeExternalCommandOutput,
-  safeErrorMessage as safeScriptErrorMessage
+  safeErrorMessage as safeScriptErrorMessage,
+  shellQuoteArg
 } from "./script-file-safety.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -156,10 +157,10 @@ function setupGitHubEnvironment(
     requiredSecrets: requirement.requiredSecrets,
     deploymentBranches: requirement.deploymentBranches,
     secretCommands: requirement.requiredSecrets.map((secretName) => (
-      `gh secret set ${secretName} --env ${requirement.environment} --repo ${repo}`
+      `gh secret set ${shellQuoteArg(secretName)} --env ${shellQuoteArg(requirement.environment)} --repo ${shellQuoteArg(repo)}`
     )),
     branchPolicyCommands: requirement.deploymentBranches.map((branchPattern) => (
-      `gh api --method POST repos/${repo}/environments/${encodeURIComponent(requirement.environment)}/deployment-branch-policies --field name=${branchPattern} --field type=branch`
+      `gh api --method POST ${shellQuoteArg(`repos/${repo}/environments/${encodeURIComponent(requirement.environment)}/deployment-branch-policies`)} --field ${shellQuoteArg(`name=${branchPattern}`)} --field type=branch`
     ))
   };
 
