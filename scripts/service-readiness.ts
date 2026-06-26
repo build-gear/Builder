@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   repoRelativePath,
   resolveRepoPath,
+  safeExternalCommandOutput,
   safeErrorMessage as safeScriptErrorMessage
 } from "./script-file-safety.js";
 
@@ -908,26 +909,7 @@ function aggregateStatus(checks: ReadinessCheck[]): ReadinessStatus {
 
 function safeCommandOutput(result: { stdout?: string | null; stderr?: string | null; error?: Error | undefined }): string {
   const raw = result.error?.message ?? `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
-  const rootRedacted = raw.replaceAll(rootDir, "[REPO_ROOT]");
-  const envRedacted = redactEnvironmentValues(rootRedacted);
-  const compact = envRedacted.replace(/\s+/g, " ").trim();
+  const compact = safeExternalCommandOutput(rootDir, raw).replace(/\s+/g, " ").trim();
 
   return compact.length > 1000 ? `${compact.slice(0, 1000)}...` : compact;
-}
-
-function redactEnvironmentValues(text: string): string {
-  let redacted = text;
-  for (const [key, value] of Object.entries(process.env)) {
-    if (!value || value.length < 8) {
-      continue;
-    }
-    if (!/(SECRET|TOKEN|PASSWORD|PRIVATE|CERTIFICATE|KEY|APPLE|TAURI|UPDATER)/i.test(key)) {
-      continue;
-    }
-    redacted = redacted.split(value).join("[REDACTED_ENV_VALUE]");
-  }
-
-  return redacted
-    .replace(/\bsk-[A-Za-z0-9_-]{16,}\b/g, "[REDACTED_KEY]")
-    .replace(/\bgh[pousr]_[A-Za-z0-9_]{16,}\b/g, "[REDACTED_TOKEN]");
 }

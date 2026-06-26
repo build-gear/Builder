@@ -17,6 +17,9 @@ const scriptFixtureDir = path.join(rootDir, "apps/desktop/src-tauri/target/servi
 const tempRoots: string[] = [];
 const repository = "build-gear/Builder";
 const fakeSecretValue = "service-readiness-secret-value";
+const fakeGitHubToken = `ghp_${"abcdefghijklmnopqrstuvwxyz123456"}`;
+const fakeOpenAiKey = `sk-${"abcdefghijklmnopqrstuvwxyz123456"}`;
+const fakeBearerToken = `Bearer ${"abcdefghijklmnopqrstuvwxyz123456"}`;
 
 describe("service readiness script", () => {
   afterEach(() => {
@@ -227,6 +230,15 @@ describe("service readiness script", () => {
       message: "Release upload plan verification failed"
     }));
     expect(uploadPlanCheck?.detail).toContain("release upload plan does not match verified release set");
+    expect(uploadPlanCheck?.detail).toContain("[REDACTED_TOKEN]");
+    expect(uploadPlanCheck?.detail).toContain("[REDACTED_KEY]");
+    expect(uploadPlanCheck?.detail).toContain("Bearer [REDACTED_TOKEN]");
+    expect(uploadPlanCheck?.detail).toContain("[REDACTED_PRIVATE_KEY]");
+    expect(output).not.toContain(fakeSecretValue);
+    expect(output).not.toContain(fakeGitHubToken);
+    expect(output).not.toContain(fakeOpenAiKey);
+    expect(output).not.toContain(fakeBearerToken);
+    expect(output).not.toContain("private-key-material");
   });
 
   it("rejects contradictory options before running checks", () => {
@@ -322,13 +334,17 @@ process.exit(2);
 `);
   writeNodeTool(binDir, "pnpm", `
 const args = process.argv.slice(2);
+const fakeGhToken = "ghp_" + "abcdefghijklmnop" + "qrstuvwxyz123456";
+const fakeOpenAiKey = "sk-" + "abcdefghijklmnop" + "qrstuvwxyz123456";
+const fakeBearerToken = "Bearer " + "abcdefghijklmnop" + "qrstuvwxyz123456";
+const fakePrivateKey = "-----BEGIN " + "PRIVATE KEY-----\\nprivate-key-material\\n-----END " + "PRIVATE KEY-----";
 if (args[0] === "release:verify") {
   process.stdout.write("release manifest verified\\n");
   process.exit(0);
 }
 if (args[0] === "release:upload-plan") {
   if (process.env.BUILDER_GEAR_UPLOAD_PLAN_FAIL === "1") {
-    process.stderr.write("release upload plan: release upload plan does not match verified release set: apps/desktop/src-tauri/target/release-upload/builder-gear-release-upload-plan.json\\n");
+    process.stderr.write("release upload plan: release upload plan does not match verified release set: apps/desktop/src-tauri/target/release-upload/builder-gear-release-upload-plan.json token=" + fakeGhToken + " key=" + fakeOpenAiKey + " bearer=" + fakeBearerToken + " private=" + fakePrivateKey + " env=" + process.env.BUILDER_GEAR_FAKE_SECRET_VALUE + "\\n");
     process.exit(1);
   }
   process.stdout.write("Release upload plan verified: apps/desktop/src-tauri/target/release-upload/builder-gear-release-upload-plan.json.\\n");
