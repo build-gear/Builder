@@ -8,7 +8,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::io::{BufReader, Read, Write};
 #[cfg(unix)]
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -2876,7 +2876,45 @@ fn read_regular_text_file(path: &Path, label: &str) -> Result<String, String> {
 fn read_bounded_text_file(path: &Path, label: &str, max_bytes: u64) -> Result<String, String> {
     let metadata = fs::symlink_metadata(path)
         .map_err(|error| format!("failed to inspect {label} {}: {error}", path.display()))?;
+    validate_regular_text_file_metadata(path, label, max_bytes, &metadata)?;
 
+    let mut file = open_regular_text_file(path, label)?;
+    let opened_metadata = file.metadata().map_err(|error| {
+        format!(
+            "failed to inspect opened {label} {}: {error}",
+            path.display()
+        )
+    })?;
+    validate_opened_text_file_metadata(path, label, max_bytes, &metadata, &opened_metadata)?;
+
+    let mut bytes = Vec::with_capacity(metadata.len().min(max_bytes) as usize);
+    let read_limit = max_bytes.saturating_add(1);
+    std::io::Read::by_ref(&mut file)
+        .take(read_limit)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("failed to read {label} {}: {error}", path.display()))?;
+
+    if bytes.len() as u64 > max_bytes {
+        return Err(format!(
+            "{label} exceeds maximum size of {max_bytes} bytes: {}",
+            path.display()
+        ));
+    }
+
+    String::from_utf8(bytes).map_err(|error| {
+        format!(
+            "failed to read {label} {} as UTF-8: {error}",
+            path.display()
+        )
+    })
+}
+
+fn validate_regular_text_file_metadata(
+    path: &Path,
+    label: &str,
+    max_bytes: u64,
+    metadata: &fs::Metadata,
+) -> Result<(), String> {
     if metadata.file_type().is_symlink() {
         return Err(format!("{label} must not be a symlink: {}", path.display()));
     }
@@ -2891,8 +2929,66 @@ fn read_bounded_text_file(path: &Path, label: &str, max_bytes: u64) -> Result<St
         ));
     }
 
-    fs::read_to_string(path)
-        .map_err(|error| format!("failed to read {label} {}: {error}", path.display()))
+    Ok(())
+}
+
+fn open_regular_text_file(path: &Path, label: &str) -> Result<fs::File, String> {
+    #[cfg(unix)]
+    {
+        fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)
+            .map_err(|error| {
+                format!(
+                    "failed to open {label} without following symlinks {}: {error}",
+                    path.display()
+                )
+            })
+    }
+
+    #[cfg(not(unix))]
+    {
+        fs::OpenOptions::new()
+            .read(true)
+            .open(path)
+            .map_err(|error| format!("failed to open {label} {}: {error}", path.display()))
+    }
+}
+
+fn validate_opened_text_file_metadata(
+    path: &Path,
+    label: &str,
+    max_bytes: u64,
+    before: &fs::Metadata,
+    after: &fs::Metadata,
+) -> Result<(), String> {
+    if !after.is_file() {
+        return Err(format!("{label} is not a file: {}", path.display()));
+    }
+    if file_identity_changed(before, after) {
+        return Err(format!("{label} changed while opening: {}", path.display()));
+    }
+    if after.len() > max_bytes {
+        return Err(format!(
+            "{label} exceeds maximum size of {max_bytes} bytes: {}",
+            path.display()
+        ));
+    }
+
+    Ok(())
+}
+
+#[cfg(unix)]
+fn file_identity_changed(before: &fs::Metadata, after: &fs::Metadata) -> bool {
+    before.dev() != after.dev() || before.ino() != after.ino()
+}
+
+#[cfg(not(unix))]
+fn file_identity_changed(before: &fs::Metadata, after: &fs::Metadata) -> bool {
+    before.len() != after.len()
+        || before.modified().ok() != after.modified().ok()
+        || before.created().ok() != after.created().ok()
 }
 
 fn is_oversized_text_file_error(error: &str) -> bool {
@@ -5562,6 +5658,66 @@ mod tests {
 
     fn oversized_text_body() -> String {
         "x".repeat(MAX_REGULAR_TEXT_FILE_BYTES as usize + 1)
+    }
+
+    #[test]
+    fn bounded_text_reader_reads_regular_utf8_file() {
+        let workspace = test_workspace();
+        let path = workspace.join("state.json");
+        fs::write(&path, "{\"ok\":true}\n").expect("text file should be written");
+
+        let source = read_bounded_text_file(&path, "state file", 1024)
+            .expect("regular UTF-8 file should read");
+        assert_eq!(source, "{\"ok\":true}\n");
+
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn bounded_text_reader_rejects_oversized_file() {
+        let workspace = test_workspace();
+        let path = workspace.join("large.txt");
+        fs::write(&path, "abcdef").expect("large text file should be written");
+
+        let error =
+            read_bounded_text_file(&path, "state file", 5).expect_err("oversized file should fail");
+        assert!(error.contains("state file exceeds maximum size of 5 bytes"));
+
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bounded_text_reader_rejects_symlinked_file() {
+        let workspace = test_workspace();
+        let target = workspace.join("target.txt");
+        let link = workspace.join("link.txt");
+        fs::write(&target, "secret").expect("target should be written");
+        symlink(&target, &link).expect("symlink should be created");
+
+        let error = read_bounded_text_file(&link, "state file", 1024)
+            .expect_err("symlinked file should fail");
+        assert!(error.contains("state file must not be a symlink"));
+
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn opened_text_file_metadata_rejects_replaced_file_identity() {
+        let workspace = test_workspace();
+        let first = workspace.join("first.txt");
+        let second = workspace.join("second.txt");
+        fs::write(&first, "first").expect("first file should be written");
+        fs::write(&second, "second").expect("second file should be written");
+        let before = fs::symlink_metadata(&first).expect("first metadata should be readable");
+        let after = fs::symlink_metadata(&second).expect("second metadata should be readable");
+
+        let error = validate_opened_text_file_metadata(&first, "state file", 1024, &before, &after)
+            .expect_err("replaced file identity should fail");
+        assert!(error.contains("state file changed while opening"));
+
+        let _ = fs::remove_dir_all(workspace);
     }
 
     #[test]
