@@ -3431,6 +3431,7 @@ function validateStableUpdaterVerificationWorkflow(workflow: WorkflowFile): stri
     ["ref: ${{ steps.release-run-metadata.outputs.head_sha }}", "stable updater verification workflow must check out the selected release candidate commit"],
     ["ARTIFACT_ROOT: release-candidate-artifact", "stable updater verification workflow must pass the isolated artifact root into manifest verification"],
     ["pnpm release:verify -- --artifact-root \"$ARTIFACT_ROOT\" \"$MANIFEST_PATH\"", "stable updater verification workflow must verify the downloaded release manifest from the isolated artifact root"],
+    ["pnpm release:upload-plan -- --artifact-root \"$ARTIFACT_ROOT\" --check \"$MANIFEST_PATH\"", "stable updater verification workflow must verify the downloaded release upload plan from the isolated artifact root"],
     ["EXPECTED_PLATFORM: ${{ inputs.platform }}", "stable updater verification workflow must pass the requested platform into manifest verification"],
     ["manifest.mode !== \"distribution\" || manifest.channel !== \"stable\" || manifest.includeBundle !== true", "stable updater verification workflow must require a bundled stable distribution manifest"],
     ["manifest.platform !== expectedPlatform", "stable updater verification workflow must require the downloaded manifest platform to match the selected platform"],

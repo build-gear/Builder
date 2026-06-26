@@ -1,5 +1,5 @@
 #!/usr/bin/env tsx
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -86,60 +86,105 @@ interface ReleaseUploadPlan {
 }
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const uploadDir = path.join(rootDir, "apps/desktop/src-tauri/target/release-upload");
 const defaultPlanPath = "apps/desktop/src-tauri/target/release-upload/builder-gear-release-upload-plan.json";
 const parsedArgs = parseReleaseScriptArgs(process.argv.slice(2), {
-  usage: "Usage: pnpm release:upload-plan -- [--output <path>] <path/to/builder-gear-release-manifest.json>",
-  allowedValueOptions: ["--output"]
+  usage: "Usage: pnpm release:upload-plan -- [--artifact-root <path>] [--output <path>] [--check] <path/to/builder-gear-release-manifest.json>",
+  allowedFlags: ["--check"],
+  allowedValueOptions: ["--artifact-root", "--output"]
 });
 
 if (!parsedArgs.ok) {
   console.error(parsedArgs.message);
   process.exitCode = parsedArgs.exitCode;
 } else {
-  const manifestPath = resolveReleaseArtifactPath(rootDir, parsedArgs.args.manifestArg);
+  const artifactRootDir = resolveArtifactRoot(parsedArgs.args.options.get("--artifact-root") ?? ".");
+  const check = parsedArgs.args.flags.has("--check");
   const outputPath = parsedArgs.args.options.get("--output") ?? defaultPlanPath;
 
-  if (!manifestPath) {
-    console.error("release upload plan: release manifest path must be repository-relative");
-    process.exitCode = 1;
-  } else if (!resolveReleaseArtifactPath(rootDir, outputPath)) {
-    console.error("release upload plan: output path must be repository-relative");
+  if (!artifactRootDir) {
     process.exitCode = 1;
   } else {
-    try {
-      const manifest = readJsonFile<ReleaseManifest>(manifestPath, "release manifest");
-      const provenancePath = path.join(path.dirname(manifestPath), "builder-gear-release-provenance.json");
-      const provenance = readJsonFile<ReleaseProvenance>(provenancePath, "release provenance");
-      const errors = verifyReleaseSet(manifest, provenance, manifestPath, provenancePath);
+    const manifestPath = resolveReleaseArtifactPath(artifactRootDir, parsedArgs.args.manifestArg);
+    const uploadDir = path.join(artifactRootDir, "apps/desktop/src-tauri/target/release-upload");
 
-      if (errors.length > 0) {
-        for (const error of errors) {
-          console.error(`release upload plan: ${error}`);
-        }
-        process.exitCode = 1;
-      } else {
-        const plan = buildUploadPlan(manifest, provenance, manifestPath, provenancePath);
-        writeGeneratedRepoTextFile(rootDir, outputPath, `${JSON.stringify(plan, null, 2)}\n`, "release upload plan");
-        console.log(`Release upload plan written to ${outputPath}.`);
-      }
-    } catch (error) {
-      console.error(`release upload plan: ${safeErrorMessage(error)}`);
+    if (!manifestPath) {
+      console.error("release upload plan: release manifest path must be repository-relative");
       process.exitCode = 1;
+    } else if (!resolveReleaseArtifactPath(artifactRootDir, outputPath)) {
+      console.error("release upload plan: output path must be artifact-root-relative");
+      process.exitCode = 1;
+    } else {
+      try {
+        const manifest = readJsonFile<ReleaseManifest>(manifestPath, "release manifest");
+        const provenancePath = path.join(path.dirname(manifestPath), "builder-gear-release-provenance.json");
+        const provenance = readJsonFile<ReleaseProvenance>(provenancePath, "release provenance");
+        const errors = verifyReleaseSet(manifest, provenance, manifestPath, provenancePath, artifactRootDir);
+
+        if (errors.length > 0) {
+          for (const error of errors) {
+            console.error(`release upload plan: ${error}`);
+          }
+          process.exitCode = 1;
+        } else {
+          const plan = buildUploadPlan(manifest, provenance, manifestPath, provenancePath, artifactRootDir, uploadDir);
+
+          if (check) {
+            const planPath = resolveReleaseArtifactPath(artifactRootDir, outputPath);
+            if (!planPath) {
+              throw new Error(`release upload plan path is unsafe: ${outputPath}`);
+            }
+            verifyUploadPlan(planPath, plan, artifactRootDir);
+            console.log(`Release upload plan verified: ${outputPath}.`);
+          } else {
+            writeGeneratedRepoTextFile(artifactRootDir, outputPath, `${JSON.stringify(plan, null, 2)}\n`, "release upload plan");
+            console.log(`Release upload plan written to ${outputPath}.`);
+          }
+        }
+      } catch (error) {
+        console.error(`release upload plan: ${safeErrorMessage(error)}`);
+        process.exitCode = 1;
+      }
     }
   }
+}
+
+function resolveArtifactRoot(artifactRootArg: string): string | undefined {
+  const artifactRoot = resolveReleaseArtifactPath(rootDir, artifactRootArg);
+
+  if (!artifactRoot) {
+    console.error("release upload plan: artifact root must be repository-relative");
+    return undefined;
+  }
+
+  try {
+    const metadata = lstatSync(artifactRoot);
+    if (metadata.isSymbolicLink()) {
+      console.error("release upload plan: artifact root must not be a symlink");
+      return undefined;
+    }
+    if (!metadata.isDirectory()) {
+      console.error("release upload plan: artifact root must be a directory");
+      return undefined;
+    }
+  } catch (error) {
+    console.error(`release upload plan: artifact root could not be read: ${repoRelativePath(rootDir, artifactRoot)}: ${safeErrorMessage(error)}`);
+    return undefined;
+  }
+
+  return artifactRoot;
 }
 
 function verifyReleaseSet(
   manifest: ReleaseManifest,
   provenance: ReleaseProvenance,
   manifestPath: string,
-  provenancePath: string
+  provenancePath: string,
+  artifactRootDir: string
 ): string[] {
   const platform = validPlatform(manifest.platform) ? manifest.platform : "macos";
   const artifactPaths = Array.isArray(manifest.artifacts)
     ? manifest.artifacts
-      .map((artifact) => resolveReleaseArtifactPath(rootDir, artifact.path))
+      .map((artifact) => resolveReleaseArtifactPath(artifactRootDir, artifact.path))
       .filter((artifactPath): artifactPath is string => Boolean(artifactPath))
     : [];
   const expectedGateIds = [
@@ -155,19 +200,20 @@ function verifyReleaseSet(
   ];
   const errors = verifyReleaseManifestArtifacts({
     manifest,
-    rootDir,
+    rootDir: artifactRootDir,
+    sourceRootDir: rootDir,
     expectedGateIds,
     requireArtifacts: manifest.includeBundle
   });
   errors.push(...verifyReleaseProvenanceArtifacts({
     provenance,
     manifest,
-    rootDir,
+    rootDir: artifactRootDir,
     expectedGateIds,
-    expectedManifestPath: repoRelativePath(manifestPath)
+    expectedManifestPath: repoRelativePath(artifactRootDir, manifestPath)
   }));
 
-  const provenanceRelativePath = repoRelativePath(provenancePath);
+  const provenanceRelativePath = repoRelativePath(artifactRootDir, provenancePath);
   if (provenanceRelativePath === "[REPO_EXTERNAL_PATH]") {
     errors.push("release provenance path escapes repository root");
   }
@@ -179,10 +225,12 @@ function buildUploadPlan(
   manifest: ReleaseManifest,
   provenance: ReleaseProvenance,
   manifestPath: string,
-  provenancePath: string
+  provenancePath: string,
+  artifactRootDir: string,
+  uploadDir: string
 ): ReleaseUploadPlan {
-  const files = releaseUploadFiles(provenance, provenancePath);
-  verifyStagedUploadFiles(files);
+  const files = releaseUploadFiles(provenance, provenancePath, artifactRootDir);
+  verifyStagedUploadFiles(files, uploadDir);
 
   const plan: ReleaseUploadPlan = {
     schemaVersion: 1,
@@ -194,20 +242,20 @@ function buildUploadPlan(
     platform: manifest.platform,
     arch: manifest.arch,
     git: manifest.git,
-    manifestPath: repoRelativePath(manifestPath),
-    provenancePath: repoRelativePath(provenancePath),
-    stagingRoot: repoRelativePath(uploadDir),
+    manifestPath: repoRelativePath(artifactRootDir, manifestPath),
+    provenancePath: repoRelativePath(artifactRootDir, provenancePath),
+    stagingRoot: repoRelativePath(artifactRootDir, uploadDir),
     files: files.map((file) => ({
       kind: file.kind,
       path: file.path,
-      stagedPath: stagedUploadPath(file.path),
+      stagedPath: stagedUploadPath(artifactRootDir, uploadDir, file.path),
       sha256: file.sha256,
       ...(file.entryCount === undefined ? {} : { entryCount: file.entryCount })
     }))
   };
 
   if (manifest.mode === "distribution" && manifest.channel === "stable") {
-    plan.stableUpdater = buildStableUpdaterPlan(manifest);
+    plan.stableUpdater = buildStableUpdaterPlan(manifest, artifactRootDir, uploadDir);
   }
 
   return plan;
@@ -215,9 +263,10 @@ function buildUploadPlan(
 
 function releaseUploadFiles(
   provenance: ReleaseProvenance,
-  provenancePath: string
+  provenancePath: string,
+  artifactRootDir: string
 ): ReleaseUploadPlanSourceFile[] {
-  const provenanceRelativePath = repoRelativePath(provenancePath);
+  const provenanceRelativePath = repoRelativePath(artifactRootDir, provenancePath);
   const files: ReleaseUploadPlanSourceFile[] = [
     ...provenance.files,
     {
@@ -235,7 +284,7 @@ function releaseUploadFiles(
   return [...byPath.values()].sort((left, right) => left.path.localeCompare(right.path));
 }
 
-function verifyStagedUploadFiles(files: Array<{ path: string; sha256: string }>): void {
+function verifyStagedUploadFiles(files: Array<{ path: string; sha256: string }>, uploadDir: string): void {
   for (const file of files) {
     const stagedPath = path.join(uploadDir, file.path);
     const relativePath = path.relative(uploadDir, stagedPath);
@@ -254,9 +303,13 @@ function verifyStagedUploadFiles(files: Array<{ path: string; sha256: string }>)
   }
 }
 
-function buildStableUpdaterPlan(manifest: ReleaseManifest): ReleaseUploadPlan["stableUpdater"] {
+function buildStableUpdaterPlan(
+  manifest: ReleaseManifest,
+  artifactRootDir: string,
+  uploadDir: string
+): ReleaseUploadPlan["stableUpdater"] {
   const feedArtifact = stableFeedArtifact(manifest);
-  const feedPath = resolveReleaseArtifactPath(rootDir, feedArtifact.path);
+  const feedPath = resolveReleaseArtifactPath(artifactRootDir, feedArtifact.path);
 
   if (!feedPath) {
     throw new Error(`stable updater feed path is unsafe: ${feedArtifact.path}`);
@@ -286,7 +339,7 @@ function buildStableUpdaterPlan(manifest: ReleaseManifest): ReleaseUploadPlan["s
     platformKey,
     feed: {
       artifactPath: feedArtifact.path,
-      stagedPath: stagedUploadPath(feedArtifact.path),
+      stagedPath: stagedUploadPath(artifactRootDir, uploadDir, feedArtifact.path),
       sha256: feedArtifact.sha256,
       endpoints: endpoints.map((endpoint) => {
         const url = parseHttpsUrl(endpoint, "stable updater endpoint");
@@ -299,15 +352,35 @@ function buildStableUpdaterPlan(manifest: ReleaseManifest): ReleaseUploadPlan["s
     },
     payload: {
       artifactPath: payloadArtifact.path,
-      stagedPath: stagedUploadPath(payloadArtifact.path),
+      stagedPath: stagedUploadPath(artifactRootDir, uploadDir, payloadArtifact.path),
       sha256: payloadArtifact.sha256,
       url: payloadUrl.toString(),
       urlPath: payloadUrl.pathname,
       decodedUploadPath: decodedUrlUploadPath(payloadUrl),
       signatureArtifactPath: signatureArtifact.path,
-      signatureStagedPath: stagedUploadPath(signatureArtifact.path),
+      signatureStagedPath: stagedUploadPath(artifactRootDir, uploadDir, signatureArtifact.path),
       signatureSha256: signatureArtifact.sha256
     }
+  };
+}
+
+function verifyUploadPlan(planPath: string, expectedPlan: ReleaseUploadPlan, artifactRootDir: string): void {
+  const actualPlan = readJsonFile<ReleaseUploadPlan>(planPath, "release upload plan");
+  if (!actualPlan.generatedAt || Number.isNaN(Date.parse(actualPlan.generatedAt))) {
+    throw new Error("release upload plan generatedAt must be an ISO timestamp");
+  }
+
+  const actualComparable = comparableUploadPlan(actualPlan);
+  const expectedComparable = comparableUploadPlan(expectedPlan);
+  if (JSON.stringify(actualComparable) !== JSON.stringify(expectedComparable)) {
+    throw new Error(`release upload plan does not match verified release set: ${repoRelativePath(artifactRootDir, planPath)}`);
+  }
+}
+
+function comparableUploadPlan(plan: ReleaseUploadPlan): ReleaseUploadPlan {
+  return {
+    ...plan,
+    generatedAt: "[GENERATED_AT]"
   };
 }
 
@@ -375,16 +448,16 @@ function decodedUrlUploadPath(url: URL): string {
   return uploadPath;
 }
 
-function stagedUploadPath(uploadFile: string): string {
-  return `${repoRelativePath(uploadDir)}/${uploadFile}`;
+function stagedUploadPath(artifactRootDir: string, uploadDir: string, uploadFile: string): string {
+  return `${repoRelativePath(artifactRootDir, uploadDir)}/${uploadFile}`;
 }
 
 function readJsonFile<T>(filePath: string, label: string): T {
   return readCheckedJsonFile<T>(filePath, label);
 }
 
-function repoRelativePath(absolutePath: string): string {
-  return safeRepoRelativePath(rootDir, absolutePath);
+function repoRelativePath(baseDir: string, absolutePath: string): string {
+  return safeRepoRelativePath(baseDir, absolutePath);
 }
 
 function validPlatform(platform: unknown): platform is ReleasePlatform {

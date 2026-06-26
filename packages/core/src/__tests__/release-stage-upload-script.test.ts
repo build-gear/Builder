@@ -1,4 +1,5 @@
 import {
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -29,6 +30,8 @@ const stableFixtureRelativeDir = "apps/desktop/src-tauri/target/release/bundle/m
 const stableFixtureDir = path.join(rootDir, stableFixtureRelativeDir);
 const uploadDir = path.join(rootDir, "apps/desktop/src-tauri/target/release-upload");
 const uploadPlanPath = path.join(stableFixtureDir, "builder-gear-release-upload-plan.json");
+const defaultUploadPlanRelativePath = "apps/desktop/src-tauri/target/release-upload/builder-gear-release-upload-plan.json";
+const defaultUploadPlanPath = path.join(rootDir, defaultUploadPlanRelativePath);
 
 describe("release upload staging script", () => {
   afterEach(() => {
@@ -215,6 +218,104 @@ describe("release upload staging script", () => {
       decodedUploadPath: "Builder Gear.app.tar.gz",
       signatureArtifactPath: `${stableFixtureRelativeDir}/Builder Gear.app.tar.gz.sig`
     });
+
+    const checkResult = spawnTsx([
+      "scripts/release-upload-plan.ts",
+      "--check",
+      "--output",
+      repoRelativePath(uploadPlanPath),
+      repoRelativePath(manifestPath)
+    ], {
+      cwd: rootDir,
+      encoding: "utf8",
+      shell: process.platform === "win32"
+    });
+
+    expect(checkResult.status).toBe(0);
+    expect(`${checkResult.stdout}\n${checkResult.stderr}`).toContain(`Release upload plan verified: ${repoRelativePath(uploadPlanPath)}.`);
+  });
+
+  it("verifies an upload plan from an isolated artifact root", () => {
+    const manifestPath = writeStableReleaseSet();
+    const stageResult = spawnTsx(["scripts/stage-release-upload.ts", repoRelativePath(manifestPath)], {
+      cwd: rootDir,
+      encoding: "utf8",
+      shell: process.platform === "win32"
+    });
+    const planResult = spawnTsx(["scripts/release-upload-plan.ts", repoRelativePath(manifestPath)], {
+      cwd: rootDir,
+      encoding: "utf8",
+      shell: process.platform === "win32"
+    });
+    const artifactRoot = path.join(scriptFixtureDir, "artifact-root");
+
+    expect(stageResult.status).toBe(0);
+    expect(planResult.status).toBe(0);
+    copyPreserved(stableFixtureDir, path.join(artifactRoot, stableFixtureRelativeDir));
+    for (const filePath of listStagedFiles()) {
+      copyPreserved(path.join(uploadDir, filePath), path.join(artifactRoot, filePath));
+    }
+    copyPreserved(uploadDir, path.join(artifactRoot, "apps/desktop/src-tauri/target/release-upload"));
+
+    const result = spawnTsx([
+      "scripts/release-upload-plan.ts",
+      "--artifact-root",
+      repoRelativePath(artifactRoot),
+      "--check",
+      repoRelativePath(manifestPath)
+    ], {
+      cwd: rootDir,
+      encoding: "utf8",
+      shell: process.platform === "win32"
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(0);
+    expect(output).toContain(`Release upload plan verified: ${defaultUploadPlanRelativePath}.`);
+    expect(output).not.toContain(rootDir);
+  });
+
+  it("rejects upload plans that no longer match the verified release set", () => {
+    const manifestPath = writeStableReleaseSet();
+    const stageResult = spawnTsx(["scripts/stage-release-upload.ts", repoRelativePath(manifestPath)], {
+      cwd: rootDir,
+      encoding: "utf8",
+      shell: process.platform === "win32"
+    });
+    const planResult = spawnTsx(["scripts/release-upload-plan.ts", repoRelativePath(manifestPath)], {
+      cwd: rootDir,
+      encoding: "utf8",
+      shell: process.platform === "win32"
+    });
+
+    expect(stageResult.status).toBe(0);
+    expect(planResult.status).toBe(0);
+
+    const plan = JSON.parse(readFileSync(defaultUploadPlanPath, "utf8")) as {
+      stableUpdater: {
+        payload: {
+          decodedUploadPath: string;
+        };
+      };
+    };
+    plan.stableUpdater.payload.decodedUploadPath = "tampered-payload.tar.gz";
+    writeJson(defaultUploadPlanPath, plan);
+
+    const result = spawnTsx([
+      "scripts/release-upload-plan.ts",
+      "--check",
+      repoRelativePath(manifestPath)
+    ], {
+      cwd: rootDir,
+      encoding: "utf8",
+      shell: process.platform === "win32"
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(1);
+    expect(output).toContain("release upload plan does not match verified release set");
+    expect(output).not.toContain(rootDir);
+    expect(output).not.toMatch(/\n\s+at\s+\S/);
   });
 
   it("fails before writing an upload plan when staged files are missing", () => {
@@ -521,6 +622,16 @@ function releaseInventoryEntries(): ReleaseInventory["entries"] {
 
 function writeJson(filePath: string, value: unknown): void {
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function copyPreserved(sourcePath: string, destinationPath: string): void {
+  mkdirSync(path.dirname(destinationPath), { recursive: true });
+  cpSync(sourcePath, destinationPath, {
+    dereference: false,
+    force: true,
+    recursive: true,
+    verbatimSymlinks: true
+  });
 }
 
 function repoRelativePath(absolutePath: string): string {

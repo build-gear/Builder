@@ -2194,6 +2194,7 @@ describe("release readiness checks", () => {
       "      - run: |",
       "          MANIFEST_PATH=\"apps/desktop/src-tauri/target/release/bundle/builder-gear-release-manifest.json\"",
       "          pnpm release:verify -- --artifact-root \"$ARTIFACT_ROOT\" \"$MANIFEST_PATH\"",
+      "          pnpm release:upload-plan -- --artifact-root \"$ARTIFACT_ROOT\" --check \"$MANIFEST_PATH\"",
       "          MANIFEST_PATH=\"$MANIFEST_PATH\" node --input-type=module <<'NODE'",
       "          const expectedPlatform = process.env.EXPECTED_PLATFORM;",
       "          if (manifest.mode !== \"distribution\" || manifest.channel !== \"stable\" || manifest.includeBundle !== true) {",
@@ -2258,6 +2259,7 @@ describe("release readiness checks", () => {
           .replace("          pattern: builder-gear-stable-${{ inputs.platform }}-*", "          pattern: builder-gear-internal-*")
           .replace("          path: release-candidate-artifact\n", "")
           .replace("          pnpm release:verify -- --artifact-root \"$ARTIFACT_ROOT\" \"$MANIFEST_PATH\"", "          pnpm release:verify -- \"$MANIFEST_PATH\"")
+          .replace("          pnpm release:upload-plan -- --artifact-root \"$ARTIFACT_ROOT\" --check \"$MANIFEST_PATH\"", "")
           .replace("          done < <(find release-candidate-artifact/apps/desktop/src-tauri/target/release-upload -type f -print0)", "          done < <(find apps/desktop/src-tauri/target/release-upload -type f -print0)")
           .replace("            gh attestation verify \"$file\" \\", "            echo \"$file\" \\")
           .replace("              --signer-workflow \"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/release-candidate.yml\" \\\n", "")
@@ -2288,6 +2290,7 @@ describe("release readiness checks", () => {
       "stable updater verification workflow must isolate downloaded release artifacts from the source checkout",
       "stable updater verification workflow must pass the isolated artifact root into manifest verification",
       "stable updater verification workflow must verify the downloaded release manifest from the isolated artifact root",
+      "stable updater verification workflow must verify the downloaded release upload plan from the isolated artifact root",
       "stable updater verification workflow must pass the requested platform into manifest verification",
       "stable updater verification workflow must require a bundled stable distribution manifest",
       "stable updater verification workflow must require the downloaded manifest platform to match the selected platform",

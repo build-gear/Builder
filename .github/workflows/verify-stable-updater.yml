@@ -160,6 +160,7 @@ jobs:
           fi
 
           pnpm release:verify -- --artifact-root "$ARTIFACT_ROOT" "$MANIFEST_PATH"
+          pnpm release:upload-plan -- --artifact-root "$ARTIFACT_ROOT" --check "$MANIFEST_PATH"
           MANIFEST_PATH="$MANIFEST_PATH" node --input-type=module <<'NODE'
           import { readFileSync } from "node:fs";
           import path from "node:path";
