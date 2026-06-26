@@ -1,6 +1,7 @@
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { compareStableUpdaterFeeds } from "../release-check.js";
 import { spawnTsx } from "./script-test-utils.js";
@@ -244,6 +245,88 @@ describe("stable updater verification script", () => {
     expect(output).not.toContain("at ");
   });
 
+  it("rejects hosted updater payload URLs that target non-public hosts before download", () => {
+    mkdirSync(scriptFixtureDir, { recursive: true });
+    const feedPath = path.join(scriptFixtureDir, "builder-gear-updater-latest.json");
+    const manifestPath = path.join(scriptFixtureDir, "builder-gear-release-manifest.json");
+    const fetchLogPath = path.join(scriptFixtureDir, "fetch.log");
+    const fetchMockPath = path.join(scriptFixtureDir, "mock-fetch.mjs");
+    const feed = {
+      version: "0.1.0",
+      notes: "Builder Gear 0.1.0",
+      pub_date: "2026-06-24T00:00:00.000Z",
+      platforms: {
+        "darwin-aarch64": {
+          signature: "signed",
+          url: "https://127.0.0.1/Builder%20Gear.app.tar.gz"
+        }
+      }
+    };
+    const feedText = `${JSON.stringify(feed)}\n`;
+
+    writeFileSync(feedPath, feedText);
+    writeFileSync(fetchMockPath, [
+      "import { appendFileSync } from 'node:fs';",
+      "globalThis.fetch = async (url) => {",
+      "  appendFileSync(process.env.BUILDER_GEAR_FETCH_LOG, String(url) + '\\n');",
+      "  return new Response(process.env.BUILDER_GEAR_HOSTED_FEED, {",
+      "    status: 200,",
+      "    headers: { 'content-type': 'application/json' }",
+      "  });",
+      "};"
+    ].join("\n"));
+    writeFileSync(manifestPath, JSON.stringify({
+      schemaVersion: 1,
+      mode: "distribution",
+      channel: "stable",
+      platform: "macos",
+      arch: "aarch64",
+      includeBundle: true,
+      buildInputs: {
+        stableUpdater: {
+          endpoints: [
+            "https://updates.buildergear.app/builder-gear-updater-latest.json"
+          ]
+        }
+      },
+      artifacts: [
+        {
+          path: repoRelativePath(feedPath),
+          sha256: sha256(feedText)
+        },
+        {
+          path: "apps/desktop/src-tauri/target/release/bundle/macos/Builder Gear.app.tar.gz",
+          sha256: "b".repeat(64)
+        }
+      ]
+    }));
+
+    const result = spawnTsx([
+      "scripts/verify-stable-updater.ts",
+      repoRelativePath(manifestPath),
+      "--verify-downloads"
+    ], {
+      cwd: rootDir,
+      encoding: "utf8",
+      shell: process.platform === "win32",
+      env: {
+        ...process.env,
+        BUILDER_GEAR_FETCH_LOG: fetchLogPath,
+        BUILDER_GEAR_HOSTED_FEED: JSON.stringify(feed),
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import ${pathToFileURL(fetchMockPath).href}`.trim()
+      }
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(1);
+    expect(output).toContain("stable updater payload URL must not point at localhost or a loopback address");
+    expect(output).not.toContain(rootDir);
+    expect(output).not.toMatch(/\n\s+at\s+\S/);
+    expect(readFileSync(fetchLogPath, "utf8").trim().split("\n")).toEqual([
+      "https://updates.buildergear.app/builder-gear-updater-latest.json"
+    ]);
+  });
+
   it("rejects duplicate download verification options before network checks", () => {
     const result = spawnTsx([
       "scripts/verify-stable-updater.ts",
@@ -288,4 +371,8 @@ describe("stable updater verification script", () => {
 
 function repoRelativePath(absolutePath: string): string {
   return path.relative(rootDir, absolutePath).split(path.sep).join("/");
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }

@@ -2431,9 +2431,14 @@ function validateBase64Payload(label: string, value: string, options: { minimumD
   return [];
 }
 
-function validateProductionUpdateUrl(label: string, value: string | undefined): string[] {
+export function validateProductionUpdateUrl(
+  label: string,
+  value: string | undefined,
+  options: { requireJsonFeed?: boolean } = {}
+): string[] {
   const endpoint = value?.trim();
   const errors: string[] = [];
+  const requireJsonFeed = options.requireJsonFeed ?? true;
 
   if (!endpoint) {
     return errors;
@@ -2462,7 +2467,7 @@ function validateProductionUpdateUrl(label: string, value: string | undefined): 
     errors.push(`${label} must not include a URL query string`);
   }
 
-  if (!/\.json$/i.test(url.pathname)) {
+  if (requireJsonFeed && !/\.json$/i.test(url.pathname)) {
     errors.push(`${label} must point to a static JSON updater feed`);
   }
 

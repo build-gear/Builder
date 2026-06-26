@@ -7,6 +7,7 @@ import {
   resolveReleaseArtifactPath,
   stableUpdaterPlatformKey,
   compareStableUpdaterFeeds,
+  validateProductionUpdateUrl,
   type ReleaseManifest,
   type ReleaseManifestArtifact,
   type StableUpdaterFeed
@@ -130,9 +131,9 @@ function stableUpdaterEndpoints(manifest: ReleaseManifest): string[] {
   }
 
   for (const endpoint of endpoints) {
-    const url = parseHttpsUrl(endpoint, "stable updater endpoint");
-    if (!/\.json$/i.test(url.pathname)) {
-      throw new Error("stable updater endpoint must point to a static JSON feed");
+    const errors = validateProductionUpdateUrl("stable updater endpoint", endpoint);
+    if (errors.length > 0) {
+      throw new Error(errors.join("; "));
     }
   }
 
@@ -177,6 +178,12 @@ async function verifyHostedUpdaterDownloads(feed: StableUpdaterFeed, manifest: R
   }
 
   const payloadUrl = parseHttpsUrl(platform.url, "stable updater payload URL");
+  const payloadUrlErrors = validateProductionUpdateUrl("stable updater payload URL", platform.url, {
+    requireJsonFeed: false
+  });
+  if (payloadUrlErrors.length > 0) {
+    return payloadUrlErrors;
+  }
   const payloadArtifact = stablePayloadArtifact(manifest, payloadUrl);
   const actualSha256 = await hashRemoteArtifact(payloadUrl);
 
