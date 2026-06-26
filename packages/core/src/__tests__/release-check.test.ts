@@ -69,6 +69,7 @@ const validMetadata = {
       "release:github-preflight": "tsx scripts/github-release-preflight.ts",
       "release:smoke-bundle": "tsx scripts/desktop-bundle-smoke.ts",
       "release:stage-upload": "tsx scripts/stage-release-upload.ts",
+      "release:upload-plan": "tsx scripts/release-upload-plan.ts",
       "release:verify": "tsx scripts/verify-release-manifest.ts",
       "release:verify-updater": "tsx scripts/verify-stable-updater.ts",
       "service:readiness": "tsx scripts/service-readiness.ts"
@@ -302,7 +303,7 @@ const validMetadata = {
   securityText: [
     "Builder Gear does not read, copy, edit, print, upload, or persist auth file contents.",
     "Codex runs use codex exec and deliver prompts over stdin instead of argv.",
-    "Run pnpm release:preflight before distribution and pnpm release:verify-updater after stable updater publication.",
+    "Run pnpm release:preflight before distribution, pnpm release:upload-plan before publishing, and pnpm release:verify-updater after stable updater publication.",
     "Diagnostics and support bundles exclude prompts, workspace paths, and Codex auth contents."
   ].join("\n"),
   privacyText: [
@@ -1430,6 +1431,7 @@ describe("release readiness checks", () => {
       "root script is missing: release:github-preflight",
       "root script is missing: release:smoke-bundle",
       "root script is missing: release:stage-upload",
+      "root script is missing: release:upload-plan",
       "root script is missing: release:verify",
       "root script is missing: release:verify-updater",
       "root script is missing: service:readiness",
@@ -1643,7 +1645,8 @@ describe("release readiness checks", () => {
       "      - run: pnpm release:check:fast",
       "      - run: pnpm release:verify -- apps/desktop/src-tauri/target/release-readiness/builder-gear-release-manifest.json",
       "      - run: pnpm service:readiness -- --manifest apps/desktop/src-tauri/target/release-readiness/builder-gear-release-manifest.json --skip-github --skip-updater --json",
-      "      - run: pnpm release:stage-upload -- apps/desktop/src-tauri/target/release-readiness/builder-gear-release-manifest.json"
+      "      - run: pnpm release:stage-upload -- apps/desktop/src-tauri/target/release-readiness/builder-gear-release-manifest.json",
+      "      - run: pnpm release:upload-plan -- apps/desktop/src-tauri/target/release-readiness/builder-gear-release-manifest.json"
     ].join("\n");
 
     expect(validateWorkflowActionRefs([
@@ -1671,6 +1674,10 @@ describe("release readiness checks", () => {
             "      - run: pnpm release:stage-upload -- apps/desktop/src-tauri/target/release-readiness/builder-gear-release-manifest.json",
             ""
           )
+          .replace(
+            "      - run: pnpm release:upload-plan -- apps/desktop/src-tauri/target/release-readiness/builder-gear-release-manifest.json",
+            ""
+          )
           .replace("    timeout-minutes: 30\n", "")
       }
     ])).toEqual(expect.arrayContaining([
@@ -1679,6 +1686,7 @@ describe("release readiness checks", () => {
       "CI workflow must verify the generated release manifest",
       "CI workflow must run the local service readiness audit",
       "CI workflow must stage the verified release upload set",
+      "CI workflow must write the release upload plan",
       "CI workflow release readiness job must have a bounded timeout"
     ]));
 
@@ -1805,6 +1813,7 @@ describe("release readiness checks", () => {
       "          MANIFEST_PATH=\"apps/desktop/src-tauri/target/release/bundle/builder-gear-release-manifest.json\"",
       "          pnpm release:verify -- \"$MANIFEST_PATH\"",
       "          pnpm release:stage-upload -- \"$MANIFEST_PATH\"",
+      "          pnpm release:upload-plan -- \"$MANIFEST_PATH\"",
       "      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be",
       "        with:",
       "          subject-path: apps/desktop/src-tauri/target/release-upload/**",
@@ -2055,6 +2064,7 @@ describe("release readiness checks", () => {
       "release candidate workflow must run the stable distribution gate for the selected platform",
       "release candidate workflow must verify the generated release manifest before upload",
       "release candidate workflow must stage only verified release files before upload",
+      "release candidate workflow must write a release upload plan before upload",
       "release candidate workflow must validate selected release secret names before build",
       "release candidate workflow must report missing release secret names without printing values",
       "release candidate workflow must allow artifact attestation writes",
@@ -2511,7 +2521,7 @@ describe("release readiness checks", () => {
     })).toEqual(expect.arrayContaining([
       "SECURITY.md must document the read-only Codex auth-file boundary",
       "SECURITY.md must document stdin prompt delivery instead of argv prompts",
-      "SECURITY.md must document distribution preflight and stable updater verification",
+      "SECURITY.md must document distribution preflight, release upload planning, and stable updater verification",
       "SECURITY.md must document diagnostics and support-bundle privacy exclusions"
     ]));
 

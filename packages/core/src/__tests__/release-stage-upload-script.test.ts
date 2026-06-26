@@ -13,20 +13,27 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   hashReleaseArtifactPath,
+  macOSDistributionVerificationCommands,
   releaseCheckCommands,
+  stableUpdaterPlatformKey,
   type ReleaseInventory,
   type ReleaseManifest,
+  type ReleaseManifestArtifact,
   type ReleaseProvenance
 } from "../release-check.js";
 import { spawnTsx } from "./script-test-utils.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const scriptFixtureDir = path.join(rootDir, "apps/desktop/src-tauri/target/release-script-test");
+const stableFixtureRelativeDir = "apps/desktop/src-tauri/target/release/bundle/macos/release-upload-plan-script-test";
+const stableFixtureDir = path.join(rootDir, stableFixtureRelativeDir);
 const uploadDir = path.join(rootDir, "apps/desktop/src-tauri/target/release-upload");
+const uploadPlanPath = path.join(stableFixtureDir, "builder-gear-release-upload-plan.json");
 
 describe("release upload staging script", () => {
   afterEach(() => {
     rmSync(scriptFixtureDir, { recursive: true, force: true });
+    rmSync(stableFixtureDir, { recursive: true, force: true });
     rmSync(uploadDir, { recursive: true, force: true });
   });
 
@@ -147,6 +154,122 @@ describe("release upload staging script", () => {
     expect(output).not.toContain("ENOENT");
     expect(output).not.toContain("at ");
   });
+
+  it("writes a stable updater upload plan from verified staged files", () => {
+    const manifestPath = writeStableReleaseSet();
+    const stageResult = spawnTsx(["scripts/stage-release-upload.ts", repoRelativePath(manifestPath)], {
+      cwd: rootDir,
+      encoding: "utf8",
+      shell: process.platform === "win32"
+    });
+
+    expect(stageResult.status).toBe(0);
+
+    const result = spawnTsx([
+      "scripts/release-upload-plan.ts",
+      "--output",
+      repoRelativePath(uploadPlanPath),
+      repoRelativePath(manifestPath)
+    ], {
+      cwd: rootDir,
+      encoding: "utf8",
+      shell: process.platform === "win32"
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(0);
+    expect(output).toContain(`Release upload plan written to ${repoRelativePath(uploadPlanPath)}.`);
+    expect(output).not.toContain(rootDir);
+
+    const plan = JSON.parse(readFileSync(uploadPlanPath, "utf8")) as {
+      schemaVersion: number;
+      stagingRoot: string;
+      files: Array<{ kind: string; path: string; stagedPath: string; sha256: string }>;
+      stableUpdater?: {
+        platformKey: string;
+        feed: {
+          endpoints: Array<{ url: string; urlPath: string; decodedUploadPath: string }>;
+        };
+        payload: {
+          artifactPath: string;
+          decodedUploadPath: string;
+          signatureArtifactPath: string;
+        };
+      };
+    };
+
+    expect(plan.schemaVersion).toBe(1);
+    expect(plan.stagingRoot).toBe("apps/desktop/src-tauri/target/release-upload");
+    expect(plan.files.some((file) => file.kind === "provenance")).toBe(true);
+    expect(plan.files.every((file) => file.stagedPath.startsWith(`${plan.stagingRoot}/`))).toBe(true);
+    expect(plan.stableUpdater?.platformKey).toBe("darwin-aarch64");
+    expect(plan.stableUpdater?.feed.endpoints).toEqual([
+      {
+        url: "https://updates.buildergear.app/builder-gear-updater-latest.json",
+        urlPath: "/builder-gear-updater-latest.json",
+        decodedUploadPath: "builder-gear-updater-latest.json"
+      }
+    ]);
+    expect(plan.stableUpdater?.payload).toMatchObject({
+      artifactPath: `${stableFixtureRelativeDir}/Builder Gear.app.tar.gz`,
+      decodedUploadPath: "Builder Gear.app.tar.gz",
+      signatureArtifactPath: `${stableFixtureRelativeDir}/Builder Gear.app.tar.gz.sig`
+    });
+  });
+
+  it("fails before writing an upload plan when staged files are missing", () => {
+    const manifestPath = writeStableReleaseSet();
+
+    const result = spawnTsx([
+      "scripts/release-upload-plan.ts",
+      "--output",
+      repoRelativePath(uploadPlanPath),
+      repoRelativePath(manifestPath)
+    ], {
+      cwd: rootDir,
+      encoding: "utf8",
+      shell: process.platform === "win32"
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(1);
+    expect(output).toContain("staged upload file is missing:");
+    expect(output).not.toContain(rootDir);
+    expect(output).not.toContain("Error:");
+    expect(output).not.toMatch(/\n\s+at\s+\S/);
+    expect(existsSync(uploadPlanPath)).toBe(false);
+  });
+
+  it("rejects stable updater payload URLs that are not declared release artifacts", () => {
+    const manifestPath = writeStableReleaseSet({
+      payloadUrl: "https://updates.buildergear.app/Missing%20Payload.app.tar.gz"
+    });
+    const stageResult = spawnTsx(["scripts/stage-release-upload.ts", repoRelativePath(manifestPath)], {
+      cwd: rootDir,
+      encoding: "utf8",
+      shell: process.platform === "win32"
+    });
+
+    expect(stageResult.status).toBe(0);
+
+    const result = spawnTsx([
+      "scripts/release-upload-plan.ts",
+      "--output",
+      repoRelativePath(uploadPlanPath),
+      repoRelativePath(manifestPath)
+    ], {
+      cwd: rootDir,
+      encoding: "utf8",
+      shell: process.platform === "win32"
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(1);
+    expect(output).toContain("stable updater payload is not declared in release manifest: Missing Payload.app.tar.gz");
+    expect(output).not.toContain(rootDir);
+    expect(output).not.toMatch(/\n\s+at\s+\S/);
+    expect(existsSync(uploadPlanPath)).toBe(false);
+  });
 });
 
 function writeMinimalReleaseSet(): string {
@@ -222,6 +345,151 @@ function writeMinimalReleaseSet(): string {
       { kind: "policy", path: ".github/dependabot.yml", sha256: hashReleaseArtifactPath(path.join(rootDir, ".github/dependabot.yml")) },
       { kind: "policy", path: "release/distribution-policy.json", sha256: hashReleaseArtifactPath(path.join(rootDir, "release/distribution-policy.json")) },
       { kind: "policy", path: "release/license-policy.json", sha256: hashReleaseArtifactPath(path.join(rootDir, "release/license-policy.json")) }
+    ]
+  };
+  writeJson(provenancePath, provenance);
+
+  return manifestPath;
+}
+
+function writeStableReleaseSet(options: { payloadUrl?: string } = {}): string {
+  rmSync(stableFixtureDir, { recursive: true, force: true });
+  mkdirSync(stableFixtureDir, { recursive: true });
+
+  const appPath = path.join(stableFixtureDir, "Builder Gear.app");
+  const appInfoPath = path.join(appPath, "Contents/Info.plist");
+  const dmgPath = path.join(stableFixtureDir, "Builder Gear_0.1.0_aarch64.dmg");
+  const payloadPath = path.join(stableFixtureDir, "Builder Gear.app.tar.gz");
+  const signaturePath = path.join(stableFixtureDir, "Builder Gear.app.tar.gz.sig");
+  const feedPath = path.join(stableFixtureDir, "builder-gear-updater-latest.json");
+  const manifestPath = path.join(stableFixtureDir, "builder-gear-release-manifest.json");
+  const inventoryPath = path.join(stableFixtureDir, "builder-gear-release-inventory.json");
+  const provenancePath = path.join(stableFixtureDir, "builder-gear-release-provenance.json");
+  const generatedAt = "2026-06-24T00:00:00.000Z";
+
+  mkdirSync(path.dirname(appInfoPath), { recursive: true });
+  writeFileSync(appInfoPath, "Builder Gear test app bundle\n");
+  writeFileSync(dmgPath, "test dmg\n");
+  writeFileSync(payloadPath, "test updater payload\n");
+  writeFileSync(signaturePath, "test updater signature\n");
+  writeJson(feedPath, {
+    version: "0.1.0",
+    notes: "Builder Gear 0.1.0",
+    pub_date: generatedAt,
+    platforms: {
+      [stableUpdaterPlatformKey("macos", "aarch64")]: {
+        signature: "test updater signature",
+        url: options.payloadUrl ?? "https://updates.buildergear.app/Builder%20Gear.app.tar.gz"
+      }
+    }
+  });
+
+  const artifacts: ReleaseManifestArtifact[] = [
+    appPath,
+    dmgPath,
+    payloadPath,
+    signaturePath,
+    feedPath
+  ].map((filePath) => ({
+    path: repoRelativePath(filePath),
+    sha256: hashReleaseArtifactPath(filePath)
+  }));
+  const artifactPaths = artifacts.map((artifact) => path.join(rootDir, artifact.path));
+  const gateIds = [
+    ...releaseCheckCommands({
+      includeBundle: true,
+      distribution: true,
+      platform: "macos",
+      channel: "stable"
+    }).map((command) => command.id),
+    ...macOSDistributionVerificationCommands(artifactPaths).map((command) => command.id)
+  ];
+  const inventoryEntries: ReleaseInventory["entries"] = [
+    ...releaseInventoryEntries(),
+    ...artifacts.map((artifact) => ({
+      kind: "artifact" as const,
+      path: artifact.path,
+      sha256: artifact.sha256
+    }))
+  ];
+  const inventory: ReleaseInventory = {
+    schemaVersion: 1,
+    generatedAt,
+    productName: "Builder Gear",
+    version: "0.1.0",
+    platform: "macos",
+    mode: "distribution",
+    channel: "stable",
+    gateIds,
+    entries: inventoryEntries
+  };
+  writeJson(inventoryPath, inventory);
+
+  const manifest: ReleaseManifest = {
+    schemaVersion: 1,
+    generatedAt,
+    mode: "distribution",
+    channel: "stable",
+    platform: "macos",
+    arch: "aarch64",
+    includeBundle: true,
+    versions: {
+      root: "0.1.0",
+      core: "0.1.0",
+      cli: "0.1.0",
+      desktop: "0.1.0",
+      tauri: "0.1.0",
+      cargo: "0.1.0"
+    },
+    packageManager: "pnpm@10.26.1",
+    productName: "Builder Gear",
+    identifier: "com.buildergear.desktop",
+    git: {
+      commit: "a".repeat(40),
+      dirty: false
+    },
+    gateIds,
+    buildInputs: {
+      tauriConfigSha256: hashReleaseArtifactPath(path.join(rootDir, "apps/desktop/src-tauri/tauri.conf.json")),
+      stableUpdater: {
+        pubkeySha256: "b".repeat(64),
+        endpoints: [
+          "https://updates.buildergear.app/builder-gear-updater-latest.json"
+        ]
+      }
+    },
+    artifacts,
+    inventory: {
+      path: repoRelativePath(inventoryPath),
+      sha256: hashReleaseArtifactPath(inventoryPath),
+      entryCount: inventoryEntries.length
+    }
+  };
+  writeJson(manifestPath, manifest);
+
+  const provenance: ReleaseProvenance = {
+    schemaVersion: 1,
+    generatedAt,
+    productName: manifest.productName,
+    version: manifest.versions.root,
+    mode: manifest.mode,
+    channel: manifest.channel,
+    platform: manifest.platform,
+    git: manifest.git,
+    gateIds,
+    files: [
+      { kind: "manifest", path: repoRelativePath(manifestPath), sha256: hashReleaseArtifactPath(manifestPath) },
+      { kind: "inventory", path: manifest.inventory.path, sha256: manifest.inventory.sha256, entryCount: inventoryEntries.length },
+      { kind: "sbom", path: "release/SBOM.cdx.json", sha256: hashReleaseArtifactPath(path.join(rootDir, "release/SBOM.cdx.json")) },
+      { kind: "notices", path: "release/THIRD_PARTY_NOTICES.md", sha256: hashReleaseArtifactPath(path.join(rootDir, "release/THIRD_PARTY_NOTICES.md")) },
+      { kind: "policy", path: ".github/dependabot.yml", sha256: hashReleaseArtifactPath(path.join(rootDir, ".github/dependabot.yml")) },
+      { kind: "policy", path: "release/distribution-policy.json", sha256: hashReleaseArtifactPath(path.join(rootDir, "release/distribution-policy.json")) },
+      { kind: "policy", path: "release/license-policy.json", sha256: hashReleaseArtifactPath(path.join(rootDir, "release/license-policy.json")) },
+      ...artifacts.map((artifact) => ({
+        kind: "artifact" as const,
+        path: artifact.path,
+        sha256: artifact.sha256
+      }))
     ]
   };
   writeJson(provenancePath, provenance);

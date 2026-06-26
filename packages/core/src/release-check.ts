@@ -829,7 +829,7 @@ export function validateReleaseMetadata(metadata: ReleaseMetadata, options: Vali
     errors.push("root packageManager is required");
   }
 
-  for (const scriptName of ["typecheck", "lint", "test", "build", "ci:policy", "license:policy", "license:notices", "license:notices:check", "sbom:generate", "sbom:check", "security:audit", "privacy:scan", "icons:generate", "release:check", "release:check:distribution", "release:check:stable", "release:preflight", "release:github-setup", "release:github-preflight", "release:smoke-bundle", "release:stage-upload", "release:verify", "release:verify-updater", "service:readiness"]) {
+  for (const scriptName of ["typecheck", "lint", "test", "build", "ci:policy", "license:policy", "license:notices", "license:notices:check", "sbom:generate", "sbom:check", "security:audit", "privacy:scan", "icons:generate", "release:check", "release:check:distribution", "release:check:stable", "release:preflight", "release:github-setup", "release:github-preflight", "release:smoke-bundle", "release:stage-upload", "release:upload-plan", "release:verify", "release:verify-updater", "service:readiness"]) {
     if (!stringAt(rootScripts, scriptName)) {
       errors.push(`root script is missing: ${scriptName}`);
     }
@@ -1362,8 +1362,8 @@ function validateSecurityPrivacyDocs(options: {
       if (!containsAll(normalized, ["codex exec", "stdin", "argv"])) {
         errors.push("SECURITY.md must document stdin prompt delivery instead of argv prompts");
       }
-      if (!normalized.includes("pnpm release:preflight") || !normalized.includes("pnpm release:verify-updater")) {
-        errors.push("SECURITY.md must document distribution preflight and stable updater verification");
+      if (!normalized.includes("pnpm release:preflight") || !normalized.includes("pnpm release:upload-plan") || !normalized.includes("pnpm release:verify-updater")) {
+        errors.push("SECURITY.md must document distribution preflight, release upload planning, and stable updater verification");
       }
       if (!containsAll(normalized, ["diagnostics", "support", "exclude prompts"])) {
         errors.push("SECURITY.md must document diagnostics and support-bundle privacy exclusions");
@@ -3299,6 +3299,10 @@ function validateReleaseReadinessWorkflow(workflow: WorkflowFile): string[] {
     [
       "pnpm release:stage-upload -- apps/desktop/src-tauri/target/release-readiness/builder-gear-release-manifest.json",
       "CI workflow must stage the verified release upload set"
+    ],
+    [
+      "pnpm release:upload-plan -- apps/desktop/src-tauri/target/release-readiness/builder-gear-release-manifest.json",
+      "CI workflow must write the release upload plan"
     ]
   ] as const;
 
@@ -3351,6 +3355,7 @@ function validateReleaseCandidateWorkflow(workflow: WorkflowFile): string[] {
     ["security find-identity -v -p codesigning \"$KEYCHAIN_PATH\" | grep -F \"$APPLE_SIGNING_IDENTITY\"", "release candidate workflow must verify the imported Apple signing identity"],
     ["pnpm release:verify -- \"$MANIFEST_PATH\"", "release candidate workflow must verify the generated release manifest before upload"],
     ["pnpm release:stage-upload -- \"$MANIFEST_PATH\"", "release candidate workflow must stage only verified release files before upload"],
+    ["pnpm release:upload-plan -- \"$MANIFEST_PATH\"", "release candidate workflow must write a release upload plan before upload"],
     ["actions/attest-build-provenance@", "release candidate workflow must attest release artifacts"],
     ["subject-path: apps/desktop/src-tauri/target/release-upload/**", "release candidate workflow must attest staged release files"],
     ["actions/upload-artifact@", "release candidate workflow must upload release artifacts"],
@@ -3582,16 +3587,20 @@ function validateReleaseCandidateBranchGuard(content: string): string[] {
 }
 
 function validateReleaseCandidateAttestationOrder(content: string): string[] {
+  const uploadPlanIndex = content.indexOf("pnpm release:upload-plan -- \"$MANIFEST_PATH\"");
   const attestIndex = content.indexOf("actions/attest-build-provenance@");
   const uploadIndex = content.indexOf("actions/upload-artifact@");
+  const errors: string[] = [];
 
-  if (attestIndex < 0 || uploadIndex < 0) {
-    return [];
+  if (uploadPlanIndex >= 0 && attestIndex >= 0 && uploadPlanIndex > attestIndex) {
+    errors.push("release candidate workflow must write the release upload plan before attestation");
   }
 
-  return attestIndex < uploadIndex
-    ? []
-    : ["release candidate workflow must attest release artifacts before upload"];
+  if (attestIndex >= 0 && uploadIndex >= 0 && attestIndex > uploadIndex) {
+    errors.push("release candidate workflow must attest release artifacts before upload");
+  }
+
+  return errors;
 }
 
 function validateReleaseCandidateSecretValidationOrder(content: string): string[] {

@@ -27,6 +27,7 @@
     "release:github-preflight": "tsx scripts/github-release-preflight.ts",
     "release:smoke-bundle": "tsx scripts/desktop-bundle-smoke.ts",
     "release:stage-upload": "tsx scripts/stage-release-upload.ts",
+    "release:upload-plan": "tsx scripts/release-upload-plan.ts",
     "release:verify": "tsx scripts/verify-release-manifest.ts",
     "release:verify-updater": "tsx scripts/verify-stable-updater.ts",
     "service:readiness": "tsx scripts/service-readiness.ts",

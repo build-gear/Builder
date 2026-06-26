@@ -215,6 +215,7 @@ jobs:
 
           pnpm release:verify -- "$MANIFEST_PATH"
           pnpm release:stage-upload -- "$MANIFEST_PATH"
+          pnpm release:upload-plan -- "$MANIFEST_PATH"
 
       - name: Attest release candidate artifacts
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2

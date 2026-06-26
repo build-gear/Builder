@@ -75,3 +75,6 @@ jobs:
 
       - name: Stage verified release upload set
         run: pnpm release:stage-upload -- apps/desktop/src-tauri/target/release-readiness/builder-gear-release-manifest.json
+
+      - name: Write release upload plan
+        run: pnpm release:upload-plan -- apps/desktop/src-tauri/target/release-readiness/builder-gear-release-manifest.json
