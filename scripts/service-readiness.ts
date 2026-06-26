@@ -184,6 +184,7 @@ function parseArgs(argv: string[]): { ok: true; args: ParsedArgs } | { ok: false
 function runReadinessAudit(args: ParsedArgs): ReadinessCheck[] {
   return [
     verifyLocalReleaseManifest(args),
+    verifyReleaseUploadPlan(args),
     verifyHostedCiStatus(args),
     verifyGitHubReleaseEnvironment(args),
     verifyStableUpdaterFeed(args)
@@ -227,6 +228,68 @@ function verifyLocalReleaseManifest(args: ParsedArgs): ReadinessCheck {
     status: "fail",
     message: "Release manifest verification failed",
     action: "Regenerate release evidence with pnpm release:check:fast or the signed distribution gate.",
+    detail: safeCommandOutput(result)
+  };
+}
+
+function verifyReleaseUploadPlan(args: ParsedArgs): ReadinessCheck {
+  if (args.skipUpdater) {
+    return {
+      id: "release-upload-plan",
+      title: "Release Upload Plan",
+      status: "skip",
+      message: "Skipped by --skip-updater",
+      action: "Run again with --stable-manifest after staging the verified upload set and writing the release upload plan."
+    };
+  }
+
+  if (!args.stableManifestPath) {
+    return {
+      id: "release-upload-plan",
+      title: "Release Upload Plan",
+      status: "fail",
+      message: "Stable manifest not provided",
+      action: "Run pnpm release:stage-upload and pnpm release:upload-plan for the stable manifest, then pass --stable-manifest <path>."
+    };
+  }
+
+  const artifactRoot = resolveArtifactRoot(args.artifactRootPath);
+  const manifest = artifactRoot.ok
+    ? checkArtifactFile(artifactRoot.absolutePath, args.stableManifestPath, "stable release manifest")
+    : artifactRoot;
+  if (!manifest.ok) {
+    return {
+      id: "release-upload-plan",
+      title: "Release Upload Plan",
+      status: "fail",
+      message: manifest.message,
+      action: "Run pnpm release:check:stable, stage the verified upload set, and write the release upload plan before release promotion."
+    };
+  }
+
+  const result = runPnpm([
+    "release:upload-plan",
+    "--",
+    "--artifact-root",
+    args.artifactRootPath,
+    "--check",
+    args.stableManifestPath
+  ]);
+  if (result.status === 0) {
+    return {
+      id: "release-upload-plan",
+      title: "Release Upload Plan",
+      status: "pass",
+      message: `Verified upload plan for ${manifest.relativePath}`
+    };
+  }
+
+  return {
+    id: "release-upload-plan",
+    title: "Release Upload Plan",
+    status: "fail",
+    message: "Release upload plan verification failed",
+    action: "Rerun pnpm release:stage-upload and pnpm release:upload-plan for the stable manifest, then rerun the readiness audit.",
     detail: safeCommandOutput(result)
   };
 }

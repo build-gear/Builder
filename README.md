@@ -83,10 +83,10 @@ The setup command dry-runs by default and creates or updates the `internal-relea
 For a single operational go/no-go check after local release evidence exists, run:
 
 ```sh
-pnpm service:readiness -- --repo OWNER/REPO --stable-manifest apps/desktop/src-tauri/target/release/bundle/macos/builder-gear-release-manifest.json
+pnpm service:readiness -- --repo OWNER/REPO --manifest apps/desktop/src-tauri/target/release/bundle/macos/builder-gear-release-manifest.json --stable-manifest apps/desktop/src-tauri/target/release/bundle/macos/builder-gear-release-manifest.json
 ```
 
-The service readiness audit verifies the local release manifest, checks that the current commit has a successful hosted `CI` workflow run, checks GitHub release environment and secret names, and compares the hosted stable updater feed with the stable manifest. Add `--verify-downloads` for final production rollout to reject non-public hosted updater payload URLs before download, then download the hosted updater payload and compare SHA-256. For local-only rehearsal, use `--skip-github --skip-updater`; the command reports that as a partial `warn` audit rather than a full production pass.
+The service readiness audit verifies the local release manifest, re-verifies the staged release upload plan for stable promotion, checks that the current commit has a successful hosted `CI` workflow run, checks GitHub release environment and secret names, and compares the hosted stable updater feed with the stable manifest. Add `--verify-downloads` for final production rollout to reject non-public hosted updater payload URLs before download, then download the hosted updater payload and compare SHA-256. For local-only rehearsal, use `--skip-github --skip-updater`; the command reports that as a partial `warn` audit rather than a full production pass.
 
 When verifying a downloaded release artifact outside its original build checkout, pass the isolated artifact root and make manifest paths relative to that root:
 

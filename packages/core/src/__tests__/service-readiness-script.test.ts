@@ -54,6 +54,10 @@ describe("service readiness script", () => {
         message: `Verified ${manifestPath}`
       }),
       expect.objectContaining({
+        id: "release-upload-plan",
+        status: "skip"
+      }),
+      expect.objectContaining({
         id: "hosted-ci",
         status: "skip"
       }),
@@ -94,6 +98,10 @@ describe("service readiness script", () => {
       id: "local-release-manifest",
       status: "pass",
       message: "Verified builder-gear-release-manifest.json"
+    }));
+    expect(report.checks[1]).toEqual(expect.objectContaining({
+      id: "release-upload-plan",
+      status: "skip"
     }));
   });
 
@@ -153,6 +161,72 @@ describe("service readiness script", () => {
     expect(githubCheck?.detail).toContain("missing environments: internal-release");
     expect(githubCheck?.detail).toContain("missing secrets: production/TAURI_SIGNING_PRIVATE_KEY");
     expect(githubCheck?.detail).toContain("missing deployment branches: production/release/*");
+  });
+
+  it("verifies the release upload plan during stable readiness audits", () => {
+    const manifestPath = repoRelativePath(writeMinimalReleaseSet());
+    const mock = installMockReadinessToolchain();
+
+    const result = runServiceReadiness([
+      "--manifest",
+      manifestPath,
+      "--stable-manifest",
+      manifestPath,
+      "--skip-github",
+      "--json"
+    ], mock.env);
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(0);
+    expect(output).not.toContain(rootDir);
+
+    const report = JSON.parse(result.stdout) as {
+      status: string;
+      checks: Array<{ id: string; status: string; message: string }>;
+    };
+
+    expect(report.status).toBe("warn");
+    expect(report.checks.find((check) => check.id === "release-upload-plan")).toEqual(expect.objectContaining({
+      status: "pass",
+      message: `Verified upload plan for ${manifestPath}`
+    }));
+    expect(report.checks.find((check) => check.id === "stable-updater-feed")).toEqual(expect.objectContaining({
+      status: "pass"
+    }));
+  });
+
+  it("fails stable readiness audits when the release upload plan is stale", () => {
+    const manifestPath = repoRelativePath(writeMinimalReleaseSet());
+    const mock = installMockReadinessToolchain();
+
+    const result = runServiceReadiness([
+      "--manifest",
+      manifestPath,
+      "--stable-manifest",
+      manifestPath,
+      "--skip-github",
+      "--json"
+    ], {
+      ...mock.env,
+      BUILDER_GEAR_UPLOAD_PLAN_FAIL: "1"
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(1);
+    expect(output).not.toContain(rootDir);
+
+    const report = JSON.parse(result.stdout) as {
+      status: string;
+      checks: Array<{ id: string; status: string; message: string; detail?: string }>;
+    };
+    const uploadPlanCheck = report.checks.find((check) => check.id === "release-upload-plan");
+
+    expect(report.status).toBe("fail");
+    expect(uploadPlanCheck).toEqual(expect.objectContaining({
+      status: "fail",
+      message: "Release upload plan verification failed"
+    }));
+    expect(uploadPlanCheck?.detail).toContain("release upload plan does not match verified release set");
   });
 
   it("rejects contradictory options before running checks", () => {
@@ -252,6 +326,14 @@ if (args[0] === "release:verify") {
   process.stdout.write("release manifest verified\\n");
   process.exit(0);
 }
+if (args[0] === "release:upload-plan") {
+  if (process.env.BUILDER_GEAR_UPLOAD_PLAN_FAIL === "1") {
+    process.stderr.write("release upload plan: release upload plan does not match verified release set: apps/desktop/src-tauri/target/release-upload/builder-gear-release-upload-plan.json\\n");
+    process.exit(1);
+  }
+  process.stdout.write("Release upload plan verified: apps/desktop/src-tauri/target/release-upload/builder-gear-release-upload-plan.json.\\n");
+  process.exit(0);
+}
 if (args[0] === "release:github-preflight") {
   process.stdout.write("> builder-gear@0.1.0 release:github-preflight /repo\\n");
   process.stdout.write("> tsx scripts/github-release-preflight.ts -- --repo build-gear/Builder --json\\n\\n");
@@ -260,6 +342,10 @@ if (args[0] === "release:github-preflight") {
   process.stderr.write("github release preflight: GitHub release environment production is missing secret: TAURI_SIGNING_PRIVATE_KEY\\n");
   process.stderr.write("github release preflight: GitHub release environment production is missing deployment branch policy: release/*\\n");
   process.exit(1);
+}
+if (args[0] === "release:verify-updater") {
+  process.stdout.write("stable updater feed verified\\n");
+  process.exit(0);
 }
 process.stderr.write("unsupported pnpm args: " + args.join(" ") + "\\n");
 process.exit(2);
