@@ -3246,7 +3246,7 @@ function validateReleaseReadinessWorkflow(workflow: WorkflowFile): string[] {
     ["pull_request:", "CI workflow must run on pull requests"],
     ["push:", "CI workflow must run on protected push targets"],
     ["- main", "CI workflow push trigger must include main"],
-    ["- \"release/**\"", "CI workflow push trigger must include release/**"],
+    ["- \"release/*\"", "CI workflow push trigger must include single-segment release/*"],
     ["permissions:\n  contents: read", "CI workflow must use read-only repository contents permission"],
     ["macos-14", "CI workflow must run release readiness on macOS"],
     ["windows-2022", "CI workflow must run release readiness on Windows"],

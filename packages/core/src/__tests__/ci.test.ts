@@ -8,9 +8,12 @@ describe("CI workflow", () => {
   it("runs release readiness across desktop platforms", () => {
     const workflow = readWorkflow();
     const job = releaseReadinessJob(workflow);
+    const pushBranches = workflow.on.push.branches;
     const osMatrix = job.strategy.matrix.os;
     const steps = job.steps as Array<{ name?: string; run?: string; uses?: string; if?: string }>;
 
+    expect(pushBranches).toEqual(["main", "release/*"]);
+    expect(pushBranches).not.toContain("release/**");
     expect(osMatrix).toEqual(["macos-14", "windows-2022", "ubuntu-22.04"]);
     expect(job.strategy["fail-fast"]).toBe(false);
     expect(steps.some((step) => step.uses?.startsWith("swatinem/rust-cache@") && pinnedActionRef(step.uses))).toBe(true);
@@ -199,6 +202,11 @@ describe("CI workflow", () => {
 
 function readWorkflow() {
   return readWorkflowFile(".github/workflows/ci.yml") as {
+    on: {
+      push: {
+        branches: string[];
+      };
+    };
     jobs: Record<string, {
       strategy: {
         "fail-fast": boolean;

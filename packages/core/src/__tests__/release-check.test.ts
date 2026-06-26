@@ -1605,7 +1605,7 @@ describe("release readiness checks", () => {
       "  push:",
       "    branches:",
       "      - main",
-      "      - \"release/**\"",
+      "      - \"release/*\"",
       "permissions:",
       "  contents: read",
       "jobs:",
